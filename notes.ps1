@@ -91,11 +91,20 @@ function Find-NotePath {
 
 function Resolve-NotePath {
     param([string]$Title)
-    $found = @(Find-NotePath $Title)
 
-    if ($found.Count -eq 0) {
-        Write-Host "Error: Note '$Title' not found." -ForegroundColor Red
-        return $null
+    if ($Title.StartsWith('#')) {
+        $tag = $Title.Substring(1)
+        $found = @(Find-NotesByTag $tag)
+        if ($found.Count -eq 0) {
+            Write-Host "Error: No notes tagged '$Title'." -ForegroundColor Red
+            return $null
+        }
+    } else {
+        $found = @(Find-NotePath $Title)
+        if ($found.Count -eq 0) {
+            Write-Host "Error: Note '$Title' not found." -ForegroundColor Red
+            return $null
+        }
     }
 
     if ($found.Count -eq 1) {
@@ -103,7 +112,8 @@ function Resolve-NotePath {
     }
 
     # Multiple matches — let the user pick
-    Write-Host "Multiple notes match '$Title':" -ForegroundColor Yellow
+    $label = if ($Title.StartsWith('#')) { "tagged '$Title'" } else { "match '$Title'" }
+    Write-Host "Multiple notes ${label}:" -ForegroundColor Yellow
     for ($i = 0; $i -lt $found.Count; $i++) {
         Write-Host "  [$($i + 1)] $($found[$i].Name)"
     }
@@ -114,6 +124,24 @@ function Resolve-NotePath {
         return $null
     }
     return $found[$idx - 1].FullName
+}
+
+# --- Tag Helpers ---
+
+function Find-NotesByTag {
+    param([string]$Tag)
+    $dir = Ensure-NotesDir
+    $files = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue
+    if (-not $files) { return @() }
+
+    $escapedTag = [regex]::Escape($Tag)
+    $tagPattern = "(?:^|\s)#${escapedTag}(?:\s|$)"
+
+    $matched = @($files | Where-Object {
+        $firstLine = (Get-Content $_.FullName -TotalCount 1)
+        $firstLine -and ($firstLine -imatch $tagPattern)
+    })
+    return $matched
 }
 
 # --- Commands ---
@@ -153,11 +181,20 @@ function Invoke-ListNotes {
     }
 
     if ($Pattern) {
-        $escaped = [regex]::Escape($Pattern)
-        $notes = @($notes | Where-Object { $_.Name -imatch $escaped })
-        if (-not $notes) {
-            Write-Host "No notes matching '$Pattern'."
-            return
+        if ($Pattern.StartsWith('#')) {
+            $tag = $Pattern.Substring(1)
+            $notes = @(Find-NotesByTag $tag)
+            if (-not $notes) {
+                Write-Host "No notes tagged '$Pattern'."
+                return
+            }
+        } else {
+            $escaped = [regex]::Escape($Pattern)
+            $notes = @($notes | Where-Object { $_.Name -imatch $escaped })
+            if (-not $notes) {
+                Write-Host "No notes matching '$Pattern'."
+                return
+            }
         }
     }
 
@@ -212,7 +249,7 @@ function Invoke-RemoveNote {
     $filename = [System.IO.Path]::GetFileName($path)
     $basename = [System.IO.Path]::GetFileNameWithoutExtension($path)
     $slug = ConvertTo-Slug $Title
-    $isPartial = ($filename -ine $Title) -and ($basename -ine $slug)
+    $isPartial = -not $Title.StartsWith('#') -and ($filename -ine $Title) -and ($basename -ine $slug)
 
     if ($isPartial) {
         # Partial match — always confirm, even with -Force
@@ -234,7 +271,10 @@ function Invoke-RemoveNote {
 }
 
 function Invoke-SearchNotes {
-    param([string]$SearchText)
+    param(
+        [string]$SearchText,
+        [string]$Tag
+    )
 
     if (-not $SearchText) {
         Write-Host "Usage: notes search <text>" -ForegroundColor Red
@@ -242,11 +282,19 @@ function Invoke-SearchNotes {
     }
 
     $dir = Ensure-NotesDir
-    $notes = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue
 
-    if (-not $notes) {
-        Write-Host "No notes found."
-        return
+    if ($Tag) {
+        $notes = @(Find-NotesByTag $Tag)
+        if (-not $notes) {
+            Write-Host "No notes tagged '#$Tag'."
+            return
+        }
+    } else {
+        $notes = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue
+        if (-not $notes) {
+            Write-Host "No notes found."
+            return
+        }
     }
 
     $found = $false
@@ -328,6 +376,10 @@ Commands:
   check             Show notes directory path and check accessibility
   import <path>     Import notes from a Standard Notes backup directory
   help              Show this help message
+
+Tags:
+  Use #tag in place of a title/pattern to filter by tag (first line of note).
+  Examples: list #Chess, show #Recipes, search #Investing dividend
 
 Environment:
   NOTES_DIR         Directory for notes (default: ~/notes)
@@ -621,9 +673,14 @@ switch (($Command ?? '').ToLower()) {
     'edit'   { Invoke-EditNote -Title $arg }
     'remove' { Invoke-RemoveNote -Title $arg -Force:$forceFlag }
     'search' {
-        # Rejoin all remaining args as the search text
-        $searchText = if ($Arguments) { $Arguments -join ' ' } else { $null }
-        Invoke-SearchNotes -SearchText $searchText
+        $searchTag = $null
+        $searchArgs = $Arguments
+        if ($Arguments -and $Arguments[0].StartsWith('#')) {
+            $searchTag = $Arguments[0].Substring(1)
+            $searchArgs = @($Arguments | Select-Object -Skip 1)
+        }
+        $searchText = if ($searchArgs) { $searchArgs -join ' ' } else { $null }
+        Invoke-SearchNotes -SearchText $searchText -Tag $searchTag
     }
     'check'  { Invoke-CheckNotes }
     'import' { Invoke-ImportNotes -BackupDir $arg }
