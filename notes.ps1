@@ -303,12 +303,281 @@ Commands:
   remove <title>    Delete a note (use -Force to skip confirmation)
   search <text>     Search all notes for text (case-insensitive)
   check             Show notes directory path and check accessibility
+  import <path>     Import notes from a Standard Notes backup directory
   help              Show this help message
 
 Environment:
   NOTES_DIR         Directory for notes (default: ~/notes)
   EDITOR / VISUAL   Preferred text editor (default: notepad)
 "@
+}
+
+# --- Import from Standard Notes ---
+
+function ConvertFrom-LexicalNode {
+    param($Node)
+
+    if (-not $Node) { return "" }
+
+    switch ($Node.type) {
+        "root" {
+            $parts = @()
+            foreach ($child in $Node.children) {
+                $parts += ConvertFrom-LexicalNode $child
+            }
+            return ($parts -join "`n`n")
+        }
+        "paragraph" {
+            $parts = @()
+            foreach ($child in $Node.children) {
+                $parts += ConvertFrom-LexicalNode $child
+            }
+            return ($parts -join "")
+        }
+        "text" {
+            $t = $Node.text
+            switch ([int]$Node.format) {
+                1 { return "**$t**" }    # bold
+                2 { return "*$t*" }      # italic
+                3 { return "***$t***" }  # bold+italic
+                default { return $t }
+            }
+        }
+        "link" {
+            $innerParts = @()
+            foreach ($child in $Node.children) {
+                $innerParts += ConvertFrom-LexicalNode $child
+            }
+            $linkText = $innerParts -join ""
+            return "[$linkText]($($Node.url))"
+        }
+        "autolink" {
+            return $Node.url
+        }
+        "list" {
+            $items = @()
+            $counter = if ($Node.start) { [int]$Node.start } else { 1 }
+            foreach ($child in $Node.children) {
+                $indent = "    " * [int]$child.indent
+                $textParts = @()
+                $nestedParts = @()
+                foreach ($grandchild in $child.children) {
+                    if ($grandchild.type -eq "list") {
+                        $nestedParts += ConvertFrom-LexicalNode $grandchild
+                    } else {
+                        $textParts += ConvertFrom-LexicalNode $grandchild
+                    }
+                }
+                if ($textParts.Count -gt 0) {
+                    $itemText = $textParts -join ""
+                    if ($Node.listType -eq "number") {
+                        $items += "${indent}${counter}. $itemText"
+                        $counter++
+                    } else {
+                        $items += "${indent}- $itemText"
+                    }
+                }
+                foreach ($nested in $nestedParts) {
+                    $items += $nested
+                }
+            }
+            return ($items -join "`n")
+        }
+        "listitem" {
+            # Handled inline within "list" above
+            $parts = @()
+            foreach ($child in $Node.children) {
+                $parts += ConvertFrom-LexicalNode $child
+            }
+            return ($parts -join "")
+        }
+        "table" {
+            $rows = @()
+            foreach ($row in $Node.children) {
+                $cells = @()
+                foreach ($cell in $row.children) {
+                    $cellParts = @()
+                    foreach ($child in $cell.children) {
+                        $cellParts += ConvertFrom-LexicalNode $child
+                    }
+                    $cells += ($cellParts -join " ")
+                }
+                $rows += "| " + ($cells -join " | ") + " |"
+                if ($rows.Count -eq 1) {
+                    $rows += "| " + (($cells | ForEach-Object { "---" }) -join " | ") + " |"
+                }
+            }
+            return ($rows -join "`n")
+        }
+        "tablerow" {
+            return ""  # Handled by table
+        }
+        "tablecell" {
+            return ""  # Handled by table
+        }
+        "linebreak" {
+            return "`n"
+        }
+        "tab" {
+            return "`t"
+        }
+        "snfile" {
+            return ""  # Skip embedded file references
+        }
+        default {
+            # Unknown node: try to recurse into children
+            if ($Node.children) {
+                $parts = @()
+                foreach ($child in $Node.children) {
+                    $parts += ConvertFrom-LexicalNode $child
+                }
+                return ($parts -join "")
+            }
+            return ""
+        }
+    }
+}
+
+function ConvertFrom-LexicalJson {
+    param([string]$JsonText)
+
+    $ast = $JsonText | ConvertFrom-Json
+    return ConvertFrom-LexicalNode $ast.root
+}
+
+function Invoke-ImportNotes {
+    param([string]$BackupDir)
+
+    if (-not $BackupDir) {
+        Write-Host "Usage: notes import <backup-directory>" -ForegroundColor Red
+        return
+    }
+    if (-not (Test-Path $BackupDir)) {
+        Write-Host "Error: Backup directory '$BackupDir' not found." -ForegroundColor Red
+        return
+    }
+
+    $tagDir  = Join-Path $BackupDir "Items\Tag"
+    $noteDir = Join-Path $BackupDir "Items\Note"
+
+    if (-not (Test-Path $noteDir)) {
+        Write-Host "Error: No Items\Note directory found in '$BackupDir'." -ForegroundColor Red
+        return
+    }
+
+    $dir = Ensure-NotesDir
+
+    # --- Build UUID-to-tags mapping from tag files ---
+    $uuidTags = @{}
+    if (Test-Path $tagDir) {
+        foreach ($tagFile in Get-ChildItem -Path $tagDir -Filter "*.txt") {
+            $tagJson = Get-Content $tagFile.FullName -Raw | ConvertFrom-Json
+            $tagName = $tagJson.title
+            foreach ($ref in $tagJson.references) {
+                if ($ref.content_type -eq "Note") {
+                    $uuid = $ref.uuid
+                    if (-not $uuidTags.ContainsKey($uuid)) {
+                        $uuidTags[$uuid] = @()
+                    }
+                    $uuidTags[$uuid] += $tagName
+                }
+            }
+        }
+    }
+
+    # --- Process note files ---
+    $imported = 0
+    $skipped  = 0
+    $tagged   = 0
+    $usedSlugs = @{}
+
+    # Pre-populate usedSlugs with existing files
+    $existingFiles = Get-ChildItem -Path $dir -Filter "*.md" -File -ErrorAction SilentlyContinue
+    foreach ($f in $existingFiles) {
+        $usedSlugs[$f.BaseName.ToLower()] = $true
+    }
+
+    foreach ($noteFile in Get-ChildItem -Path $noteDir -Filter "*.txt" | Sort-Object Name) {
+        $content = Get-Content $noteFile.FullName -Raw
+
+        # Skip empty notes
+        if (-not $content -or $content.Length -eq 0) {
+            $skipped++
+            Write-Host "  SKIP (empty): $($noteFile.Name)" -ForegroundColor DarkGray
+            continue
+        }
+
+        # Extract title: everything before the last -[8hexchars].txt
+        $baseName = $noteFile.BaseName
+        if ($baseName -match '^(.+)-([0-9a-fA-F]{8})$') {
+            $title   = $Matches[1]
+            $shortId = $Matches[2]
+        } else {
+            $title   = $baseName
+            $shortId = ""
+        }
+
+        # Find tags for this note via the short UUID
+        $noteTags = @()
+        if ($shortId) {
+            foreach ($uuid in $uuidTags.Keys) {
+                if ($uuid -like "*$shortId*") {
+                    $noteTags += $uuidTags[$uuid]
+                }
+            }
+            $noteTags = @($noteTags | Select-Object -Unique | Sort-Object)
+        }
+
+        # Convert content to markdown
+        $trimmed = $content.TrimStart()
+        if ($trimmed.StartsWith('{"root"')) {
+            try {
+                $body = ConvertFrom-LexicalJson $content
+            } catch {
+                $body = $content
+            }
+        } else {
+            $body = $content
+        }
+
+        # Build the slug, handling duplicates
+        $slug = ConvertTo-Slug $title
+        if (-not $slug) {
+            $skipped++
+            Write-Host "  SKIP (no title): $($noteFile.Name)" -ForegroundColor DarkGray
+            continue
+        }
+
+        $finalSlug = $slug
+        if ($usedSlugs.ContainsKey($finalSlug.ToLower())) {
+            $counter = 2
+            while ($usedSlugs.ContainsKey("${slug}-${counter}".ToLower())) {
+                $counter++
+            }
+            $finalSlug = "${slug}-${counter}"
+            Write-Host "  WARN (duplicate title): '$title' -> ${finalSlug}.md" -ForegroundColor Yellow
+        }
+        $usedSlugs[$finalSlug.ToLower()] = $true
+
+        # Compose file content
+        $lines = @()
+        if ($noteTags.Count -gt 0) {
+            $lines += ($noteTags | ForEach-Object { "#$_" }) -join " "
+            $lines += ""
+            $tagged++
+        }
+        $lines += "# $title"
+        $lines += ""
+        $lines += $body
+
+        $outPath = Join-Path $dir "$finalSlug.md"
+        Set-Content -Path $outPath -Value ($lines -join "`n") -Encoding utf8 -NoNewline
+
+        $imported++
+    }
+
+    Write-Host ""
+    Write-Host "Import complete: $imported imported, $skipped skipped, $tagged with tags." -ForegroundColor Green
 }
 
 # --- Main Dispatch ---
@@ -334,6 +603,7 @@ switch (($Command ?? '').ToLower()) {
         Invoke-SearchNotes -SearchText $searchText
     }
     'check'  { Invoke-CheckNotes }
+    'import' { Invoke-ImportNotes -BackupDir $arg }
     'help'   { Show-Help }
     default  { Show-Help }
 }
