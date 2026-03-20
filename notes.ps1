@@ -212,6 +212,26 @@ function Invoke-SearchNotes {
     }
 }
 
+function Invoke-CheckNotes {
+    $dir = Get-NotesDir
+    Write-Host "Notes directory: $dir"
+
+    if (-not (Test-Path $dir)) {
+        Write-Host "Status: NOT FOUND (will be created on first use)" -ForegroundColor Yellow
+        return
+    }
+
+    try {
+        $testFile = Join-Path $dir ".notes-access-check"
+        Set-Content -Path $testFile -Value "" -ErrorAction Stop
+        Remove-Item -Path $testFile -Force
+        $count = (Get-ChildItem -Path $dir -Filter "*.md" -File -ErrorAction SilentlyContinue).Count
+        Write-Host "Status: OK ($count note(s))" -ForegroundColor Green
+    } catch {
+        Write-Host "Status: NOT ACCESSIBLE - $_" -ForegroundColor Red
+    }
+}
+
 function Show-Help {
     Write-Host @"
 notes.ps1 - Markdown note manager
@@ -226,6 +246,7 @@ Commands:
   edit <title>      Open an existing note in the editor
   remove <title>    Delete a note (use -Force to skip confirmation)
   search <text>     Search all notes for text (case-insensitive)
+  check             Show notes directory path and check accessibility
   help              Show this help message
 
 Environment:
@@ -256,6 +277,7 @@ switch (($Command ?? '').ToLower()) {
         $searchText = if ($Arguments) { $Arguments -join ' ' } else { $null }
         Invoke-SearchNotes -SearchText $searchText
     }
+    'check'  { Invoke-CheckNotes }
     'help'   { Show-Help }
     default  { Show-Help }
 }
