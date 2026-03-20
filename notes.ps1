@@ -254,7 +254,7 @@ function Invoke-SearchNotes {
                     if ($idx -gt 0) {
                         Write-Host $remaining.Substring(0, $idx) -NoNewline
                     }
-                    Write-Host $remaining.Substring($idx, $Matches[1].Length) -NoNewline -ForegroundColor Yellow -BackgroundColor DarkGray
+                    Write-Host $remaining.Substring($idx, $Matches[1].Length) -NoNewline -BackgroundColor Yellow -ForegroundColor Black
                     $remaining = $remaining.Substring($idx + $Matches[1].Length)
                 }
                 Write-Host $remaining
