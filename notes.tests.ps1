@@ -68,14 +68,14 @@ Describe 'add' {
     }
 
     It 'errors when title is missing' {
-        $err = Invoke-Notes 'add' 2>&1
-        "$err" | Should -BeLike '*Usage*'
+        $out = Invoke-Notes 'add' 6>&1
+        "$out" | Should -BeLike '*Usage*'
     }
 
     It 'errors on duplicate add' {
         Invoke-Notes 'add', 'Dup'
-        $err = Invoke-Notes 'add', 'Dup' 2>&1
-        "$err" | Should -BeLike '*already exists*'
+        $out = Invoke-Notes 'add', 'Dup' 6>&1
+        "$out" | Should -BeLike '*already exists*'
     }
 
     It 'handles special characters in title' {
@@ -122,13 +122,13 @@ Describe 'show' {
     }
 
     It 'errors when title is missing' {
-        $err = Invoke-Notes 'show' 2>&1
-        "$err" | Should -BeLike '*Usage*'
+        $out = Invoke-Notes 'show' 6>&1
+        "$out" | Should -BeLike '*Usage*'
     }
 
     It 'errors when note does not exist' {
-        $err = Invoke-Notes 'show', 'Ghost' 2>&1
-        "$err" | Should -BeLike '*not found*'
+        $out = Invoke-Notes 'show', 'Ghost' 6>&1
+        "$out" | Should -BeLike '*not found*'
     }
 }
 
@@ -144,13 +144,13 @@ Describe 'edit' {
     }
 
     It 'errors when title is missing' {
-        $err = Invoke-Notes 'edit' 2>&1
-        "$err" | Should -BeLike '*Usage*'
+        $out = Invoke-Notes 'edit' 6>&1
+        "$out" | Should -BeLike '*Usage*'
     }
 
     It 'errors when note does not exist' {
-        $err = Invoke-Notes 'edit', 'Nope' 2>&1
-        "$err" | Should -BeLike '*not found*'
+        $out = Invoke-Notes 'edit', 'Nope' 6>&1
+        "$out" | Should -BeLike '*not found*'
     }
 }
 
@@ -173,13 +173,13 @@ Describe 'remove' {
     }
 
     It 'errors when title is missing' {
-        $err = Invoke-Notes 'remove' 2>&1
-        "$err" | Should -BeLike '*Usage*'
+        $out = Invoke-Notes 'remove' 6>&1
+        "$out" | Should -BeLike '*Usage*'
     }
 
     It 'errors when note does not exist' {
-        $err = Invoke-Notes 'remove', 'Missing', '-Force' 2>&1
-        "$err" | Should -BeLike '*not found*'
+        $out = Invoke-Notes 'remove', 'Missing', '-Force' 6>&1
+        "$out" | Should -BeLike '*not found*'
     }
 }
 
@@ -214,8 +214,8 @@ Describe 'search' {
     }
 
     It 'errors when search text is missing' {
-        $err = Invoke-Notes 'search' 2>&1
-        "$err" | Should -BeLike '*Usage*'
+        $out = Invoke-Notes 'search' 6>&1
+        "$out" | Should -BeLike '*Usage*'
     }
 
     It 'searches across multiple words' {

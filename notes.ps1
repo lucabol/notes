@@ -67,14 +67,53 @@ function Find-NotePath {
     param([string]$Title)
     $dir = Ensure-NotesDir
     $slug = ConvertTo-Slug $Title
-    # Try exact filename first (with extension included in title)
-    $exact = Join-Path $dir $Title
-    if (Test-Path $exact) { return $exact }
-    # Then match by slug as basename (any extension)
-    $matches = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.BaseName -eq $slug }
-    if ($matches) { return $matches[0].FullName }
-    return $null
+    $files = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue
+    if (-not $files) { return @() }
+
+    # 1. Exact filename match (case-insensitive)
+    $exact = @($files | Where-Object { $_.Name -ieq $Title })
+    if ($exact.Count -gt 0) { return $exact }
+
+    # 2. Slug basename match (case-insensitive)
+    $slugMatch = @($files | Where-Object { $_.BaseName -ieq $slug })
+    if ($slugMatch.Count -gt 0) { return $slugMatch }
+
+    # 3. Partial substring match on filename (case-insensitive)
+    $partial = @($files | Where-Object { $_.Name -imatch [regex]::Escape($Title) })
+    if ($partial.Count -gt 0) { return $partial }
+
+    # 4. Partial substring match on slug against basename
+    $partialSlug = @($files | Where-Object { $_.BaseName -imatch [regex]::Escape($slug) })
+    if ($partialSlug.Count -gt 0) { return $partialSlug }
+
+    return @()
+}
+
+function Resolve-NotePath {
+    param([string]$Title)
+    $matches = @(Find-NotePath $Title)
+
+    if ($matches.Count -eq 0) {
+        Write-Host "Error: Note '$Title' not found." -ForegroundColor Red
+        return $null
+    }
+
+    if ($matches.Count -eq 1) {
+        return $matches[0].FullName
+    }
+
+    # Multiple matches — let the user pick
+    Write-Host "Multiple notes match '$Title':" -ForegroundColor Yellow
+    for ($i = 0; $i -lt $matches.Count; $i++) {
+        Write-Host "  [$($i + 1)] $($matches[$i].Name)"
+    }
+    $choice = Read-Host "Pick a number (1-$($matches.Count)), or 0 to cancel"
+    $idx = 0
+    if (-not [int]::TryParse($choice, [ref]$idx) -or $idx -lt 1 -or $idx -gt $matches.Count) {
+        Write-Host "Cancelled."
+        return $null
+    }
+    return $matches[$idx - 1].FullName
 }
 
 # --- Commands ---
@@ -83,13 +122,13 @@ function Invoke-AddNote {
     param([string]$Title)
 
     if (-not $Title) {
-        Write-Error "Usage: notes add <title>"
+        Write-Host "Usage: notes add <title>" -ForegroundColor Red
         return
     }
 
     $path = Get-NotePath $Title
-    if ((Find-NotePath $Title)) {
-        Write-Error "Note '$Title' already exists."
+    if (@(Find-NotePath $Title).Count -gt 0) {
+        Write-Host "Error: Note '$Title' already exists." -ForegroundColor Red
         return
     }
 
@@ -120,15 +159,12 @@ function Invoke-ShowNote {
     param([string]$Title)
 
     if (-not $Title) {
-        Write-Error "Usage: notes show <title>"
+        Write-Host "Usage: notes show <title>" -ForegroundColor Red
         return
     }
 
-    $path = Find-NotePath $Title
-    if (-not $path) {
-        Write-Error "Note '$Title' not found."
-        return
-    }
+    $path = Resolve-NotePath $Title
+    if (-not $path) { return }
 
     Get-Content -Path $path -Raw
 }
@@ -137,15 +173,12 @@ function Invoke-EditNote {
     param([string]$Title)
 
     if (-not $Title) {
-        Write-Error "Usage: notes edit <title>"
+        Write-Host "Usage: notes edit <title>" -ForegroundColor Red
         return
     }
 
-    $path = Find-NotePath $Title
-    if (-not $path) {
-        Write-Error "Note '$Title' not found."
-        return
-    }
+    $path = Resolve-NotePath $Title
+    if (-not $path) { return }
 
     $editor = Get-Editor
     Start-Process -FilePath $editor -ArgumentList "`"$path`"" -NoNewWindow -Wait
@@ -158,15 +191,12 @@ function Invoke-RemoveNote {
     )
 
     if (-not $Title) {
-        Write-Error "Usage: notes remove <title> [-Force]"
+        Write-Host "Usage: notes remove <title> [-Force]" -ForegroundColor Red
         return
     }
 
-    $path = Find-NotePath $Title
-    if (-not $path) {
-        Write-Error "Note '$Title' not found."
-        return
-    }
+    $path = Resolve-NotePath $Title
+    if (-not $path) { return }
 
     if (-not $Force) {
         $confirm = Read-Host "Delete note '$Title'? (y/N)"
@@ -184,7 +214,7 @@ function Invoke-SearchNotes {
     param([string]$SearchText)
 
     if (-not $SearchText) {
-        Write-Error "Usage: notes search <text>"
+        Write-Host "Usage: notes search <text>" -ForegroundColor Red
         return
     }
 
@@ -216,7 +246,18 @@ function Invoke-SearchNotes {
             Write-Host ""
             Write-Host "=== $($note.Name) ===" -ForegroundColor Cyan
             foreach ($hit in $hitLines) {
-                Write-Host "  $($hit.LineNumber): $($hit.Text)"
+                Write-Host "  $($hit.LineNumber): " -NoNewline
+                # Highlight matching text
+                $remaining = $hit.Text
+                while ($remaining -imatch "(?i)($escapedText)") {
+                    $idx = $remaining.IndexOf($Matches[1], [System.StringComparison]::OrdinalIgnoreCase)
+                    if ($idx -gt 0) {
+                        Write-Host $remaining.Substring(0, $idx) -NoNewline
+                    }
+                    Write-Host $remaining.Substring($idx, $Matches[1].Length) -NoNewline -ForegroundColor Yellow -BackgroundColor DarkGray
+                    $remaining = $remaining.Substring($idx + $Matches[1].Length)
+                }
+                Write-Host $remaining
             }
         }
     }
