@@ -214,7 +214,8 @@ function Invoke-SearchNotes {
 
 function Invoke-CheckNotes {
     $dir = Get-NotesDir
-    Write-Host "Notes directory: $dir"
+    $source = if ($env:NOTES_DIR) { "`$env:NOTES_DIR" } else { "default (~\notes)" }
+    Write-Host "Notes directory: $dir (from $source)"
 
     if (-not (Test-Path $dir)) {
         Write-Host "Status: NOT FOUND (will be created on first use)" -ForegroundColor Yellow
