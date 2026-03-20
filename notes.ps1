@@ -63,6 +63,20 @@ function Get-NotePath {
     return Join-Path $dir (Get-NoteFilename $Title)
 }
 
+function Find-NotePath {
+    param([string]$Title)
+    $dir = Ensure-NotesDir
+    $slug = ConvertTo-Slug $Title
+    # Try exact filename first (with extension included in title)
+    $exact = Join-Path $dir $Title
+    if (Test-Path $exact) { return $exact }
+    # Then match by slug as basename (any extension)
+    $matches = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.BaseName -eq $slug }
+    if ($matches) { return $matches[0].FullName }
+    return $null
+}
+
 # --- Commands ---
 
 function Invoke-AddNote {
@@ -74,7 +88,7 @@ function Invoke-AddNote {
     }
 
     $path = Get-NotePath $Title
-    if (Test-Path $path) {
+    if ((Find-NotePath $Title)) {
         Write-Error "Note '$Title' already exists."
         return
     }
@@ -90,7 +104,7 @@ function Invoke-AddNote {
 
 function Invoke-ListNotes {
     $dir = Ensure-NotesDir
-    $notes = Get-ChildItem -Path $dir -Filter "*.md" -File -ErrorAction SilentlyContinue
+    $notes = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue
 
     if (-not $notes) {
         Write-Host "No notes found."
@@ -98,7 +112,7 @@ function Invoke-ListNotes {
     }
 
     foreach ($note in $notes | Sort-Object Name) {
-        Write-Output ($note.BaseName)
+        Write-Output ($note.Name)
     }
 }
 
@@ -110,8 +124,8 @@ function Invoke-ShowNote {
         return
     }
 
-    $path = Get-NotePath $Title
-    if (-not (Test-Path $path)) {
+    $path = Find-NotePath $Title
+    if (-not $path) {
         Write-Error "Note '$Title' not found."
         return
     }
@@ -127,8 +141,8 @@ function Invoke-EditNote {
         return
     }
 
-    $path = Get-NotePath $Title
-    if (-not (Test-Path $path)) {
+    $path = Find-NotePath $Title
+    if (-not $path) {
         Write-Error "Note '$Title' not found."
         return
     }
@@ -148,8 +162,8 @@ function Invoke-RemoveNote {
         return
     }
 
-    $path = Get-NotePath $Title
-    if (-not (Test-Path $path)) {
+    $path = Find-NotePath $Title
+    if (-not $path) {
         Write-Error "Note '$Title' not found."
         return
     }
@@ -175,7 +189,7 @@ function Invoke-SearchNotes {
     }
 
     $dir = Ensure-NotesDir
-    $notes = Get-ChildItem -Path $dir -Filter "*.md" -File -ErrorAction SilentlyContinue
+    $notes = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue
 
     if (-not $notes) {
         Write-Host "No notes found."
@@ -200,7 +214,7 @@ function Invoke-SearchNotes {
         if ($hitLines.Count -gt 0) {
             $found = $true
             Write-Host ""
-            Write-Host "=== $($note.BaseName) ===" -ForegroundColor Cyan
+            Write-Host "=== $($note.Name) ===" -ForegroundColor Cyan
             foreach ($hit in $hitLines) {
                 Write-Host "  $($hit.LineNumber): $($hit.Text)"
             }
@@ -226,7 +240,7 @@ function Invoke-CheckNotes {
         $testFile = Join-Path $dir ".notes-access-check"
         Set-Content -Path $testFile -Value "" -ErrorAction Stop
         Remove-Item -Path $testFile -Force
-        $count = (Get-ChildItem -Path $dir -Filter "*.md" -File -ErrorAction SilentlyContinue).Count
+        $count = (Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue).Count
         Write-Host "Status: OK ($count note(s))" -ForegroundColor Green
     } catch {
         Write-Host "Status: NOT ACCESSIBLE - $_" -ForegroundColor Red

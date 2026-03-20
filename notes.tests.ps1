@@ -14,8 +14,8 @@ BeforeAll {
     New-Item -ItemType Directory -Path $script:TempDir -Force | Out-Null
     $env:NOTES_DIR = $script:TempDir
 
-    # No-op editor — a tiny batch file that exits immediately
-    $script:NoopEditor = Join-Path $script:TempDir '_noop-editor.cmd'
+    # No-op editor — a tiny batch file that exits immediately (outside notes dir)
+    $script:NoopEditor = Join-Path ([System.IO.Path]::GetTempPath()) "notes-noop-editor-$([guid]::NewGuid().ToString('N')).cmd"
     Set-Content -Path $script:NoopEditor -Value '@exit /b 0' -Encoding ascii
     $env:EDITOR = $script:NoopEditor
 
@@ -40,12 +40,15 @@ AfterAll {
     if ($script:TempDir -and (Test-Path $script:TempDir)) {
         Remove-Item -Recurse -Force $script:TempDir
     }
+    if ($script:NoopEditor -and (Test-Path $script:NoopEditor)) {
+        Remove-Item -Force $script:NoopEditor
+    }
 }
 
 # ── add ──────────────────────────────────────────────────────────────
 Describe 'add' {
     BeforeEach {
-        Get-ChildItem $env:NOTES_DIR -Filter '*.md' | Remove-Item -Force
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
     }
 
     It 'creates a new note file' {
@@ -85,7 +88,7 @@ Describe 'add' {
 # ── list ─────────────────────────────────────────────────────────────
 Describe 'list' {
     BeforeEach {
-        Get-ChildItem $env:NOTES_DIR -Filter '*.md' | Remove-Item -Force
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
     }
 
     It 'reports when no notes exist' {
@@ -93,22 +96,22 @@ Describe 'list' {
         "$out" | Should -BeLike '*No notes found*'
     }
 
-    It 'lists note base-names sorted' {
+    It 'lists note names sorted' {
         New-NoteFile 'bravo'
         New-NoteFile 'alpha'
         New-NoteFile 'charlie'
         $out = Invoke-Notes 'list'
         $out | Should -HaveCount 3
-        $out[0] | Should -Be 'alpha'
-        $out[1] | Should -Be 'bravo'
-        $out[2] | Should -Be 'charlie'
+        $out[0] | Should -Be 'alpha.md'
+        $out[1] | Should -Be 'bravo.md'
+        $out[2] | Should -Be 'charlie.md'
     }
 }
 
 # ── show ─────────────────────────────────────────────────────────────
 Describe 'show' {
     BeforeEach {
-        Get-ChildItem $env:NOTES_DIR -Filter '*.md' | Remove-Item -Force
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
     }
 
     It 'displays note content' {
@@ -132,7 +135,7 @@ Describe 'show' {
 # ── edit ─────────────────────────────────────────────────────────────
 Describe 'edit' {
     BeforeEach {
-        Get-ChildItem $env:NOTES_DIR -Filter '*.md' | Remove-Item -Force
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
     }
 
     It 'opens without error for existing note' {
@@ -154,7 +157,7 @@ Describe 'edit' {
 # ── remove ───────────────────────────────────────────────────────────
 Describe 'remove' {
     BeforeEach {
-        Get-ChildItem $env:NOTES_DIR -Filter '*.md' | Remove-Item -Force
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
     }
 
     It 'removes a note with -Force' {
@@ -183,7 +186,7 @@ Describe 'remove' {
 # ── search ───────────────────────────────────────────────────────────
 Describe 'search' {
     BeforeEach {
-        Get-ChildItem $env:NOTES_DIR -Filter '*.md' | Remove-Item -Force
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
     }
 
     It 'finds matching text in notes' {
