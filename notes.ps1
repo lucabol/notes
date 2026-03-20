@@ -91,29 +91,29 @@ function Find-NotePath {
 
 function Resolve-NotePath {
     param([string]$Title)
-    $matches = @(Find-NotePath $Title)
+    $found = @(Find-NotePath $Title)
 
-    if ($matches.Count -eq 0) {
+    if ($found.Count -eq 0) {
         Write-Host "Error: Note '$Title' not found." -ForegroundColor Red
         return $null
     }
 
-    if ($matches.Count -eq 1) {
-        return $matches[0].FullName
+    if ($found.Count -eq 1) {
+        return $found[0].FullName
     }
 
     # Multiple matches — let the user pick
     Write-Host "Multiple notes match '$Title':" -ForegroundColor Yellow
-    for ($i = 0; $i -lt $matches.Count; $i++) {
-        Write-Host "  [$($i + 1)] $($matches[$i].Name)"
+    for ($i = 0; $i -lt $found.Count; $i++) {
+        Write-Host "  [$($i + 1)] $($found[$i].Name)"
     }
-    $choice = Read-Host "Pick a number (1-$($matches.Count)), or 0 to cancel"
+    $choice = Read-Host "Pick a number (1-$($found.Count)), or 0 to cancel"
     $idx = 0
-    if (-not [int]::TryParse($choice, [ref]$idx) -or $idx -lt 1 -or $idx -gt $matches.Count) {
+    if (-not [int]::TryParse($choice, [ref]$idx) -or $idx -lt 1 -or $idx -gt $found.Count) {
         Write-Host "Cancelled."
         return $null
     }
-    return $matches[$idx - 1].FullName
+    return $found[$idx - 1].FullName
 }
 
 # --- Commands ---
