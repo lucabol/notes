@@ -198,7 +198,19 @@ function Invoke-RemoveNote {
     $path = Resolve-NotePath $Title
     if (-not $path) { return }
 
-    if (-not $Force) {
+    $filename = [System.IO.Path]::GetFileName($path)
+    $basename = [System.IO.Path]::GetFileNameWithoutExtension($path)
+    $slug = ConvertTo-Slug $Title
+    $isPartial = ($filename -ine $Title) -and ($basename -ine $slug)
+
+    if ($isPartial) {
+        # Partial match — always confirm, even with -Force
+        $confirm = Read-Host "Did you mean '$filename'? (y/N)"
+        if ($confirm -notin @('y', 'yes')) {
+            Write-Host "Cancelled."
+            return
+        }
+    } elseif (-not $Force) {
         $confirm = Read-Host "Delete note '$Title'? (y/N)"
         if ($confirm -notin @('y', 'yes')) {
             Write-Host "Cancelled."
