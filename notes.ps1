@@ -142,12 +142,23 @@ function Invoke-AddNote {
 }
 
 function Invoke-ListNotes {
+    param([string]$Pattern)
+
     $dir = Ensure-NotesDir
     $notes = Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue
 
     if (-not $notes) {
         Write-Host "No notes found."
         return
+    }
+
+    if ($Pattern) {
+        $escaped = [regex]::Escape($Pattern)
+        $notes = @($notes | Where-Object { $_.Name -imatch $escaped })
+        if (-not $notes) {
+            Write-Host "No notes matching '$Pattern'."
+            return
+        }
     }
 
     foreach ($note in $notes | Sort-Object Name) {
@@ -309,7 +320,7 @@ Usage:
 
 Commands:
   add <title>       Create a new note and open it in the editor
-  list              List all note titles
+  list [pattern]    List all notes (optionally filter by pattern)
   show <title>      Display a note's content
   edit <title>      Open an existing note in the editor
   remove <title>    Delete a note (use -Force to skip confirmation)
@@ -605,7 +616,7 @@ $arg = if ($Arguments.Count -gt 0) { $Arguments[0] } else { $null }
 
 switch (($Command ?? '').ToLower()) {
     'add'    { Invoke-AddNote -Title $arg }
-    'list'   { Invoke-ListNotes }
+    'list'   { Invoke-ListNotes -Pattern $arg }
     'show'   { Invoke-ShowNote -Title $arg }
     'edit'   { Invoke-EditNote -Title $arg }
     'remove' { Invoke-RemoveNote -Title $arg -Force:$forceFlag }
