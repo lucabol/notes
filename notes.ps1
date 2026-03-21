@@ -381,7 +381,7 @@ function Invoke-CheckNotes {
         $testFile = Join-Path $dir ".notes-access-check"
         Set-Content -Path $testFile -Value "" -ErrorAction Stop
         Remove-Item -Path $testFile -Force
-        $count = (Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue).Count
+        $count = @(Get-ChildItem -Path $dir -File -ErrorAction SilentlyContinue).Count
         Write-Host "Status: OK ($count note(s))" -ForegroundColor Green
     } catch {
         Write-Host "Status: NOT ACCESSIBLE - $_" -ForegroundColor Red
@@ -468,7 +468,7 @@ function ConvertFrom-LexicalNode {
         }
         "list" {
             $items = @()
-            $counter = if ($Node.start) { [int]$Node.start } else { 1 }
+            $counter = if ($Node.PSObject.Properties['start'] -and $Node.start) { [int]$Node.start } else { 1 }
             foreach ($child in $Node.children) {
                 $indent = "    " * [int]$child.indent
                 $textParts = @()
@@ -694,9 +694,12 @@ function Invoke-ImportNotes {
 
 # --- Main Dispatch ---
 
+# Normalise $Arguments so .Count always works (even under Set-StrictMode)
+if (-not $Arguments) { $Arguments = @() }
+
 # Check for -Force anywhere in the remaining arguments
 $forceFlag = $false
-if ($Arguments -and ($Arguments -contains '-Force')) {
+if ($Arguments.Count -gt 0 -and ($Arguments -contains '-Force')) {
     $forceFlag = $true
     $Arguments = @($Arguments | Where-Object { $_ -ne '-Force' })
 }

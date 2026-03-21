@@ -237,3 +237,522 @@ Describe 'help and default' {
         "$out" | Should -Match 'Usage'
     }
 }
+
+# ── check ────────────────────────────────────────────────────────────
+Describe 'check' {
+    BeforeEach {
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
+    }
+
+    It 'reports directory path from NOTES_DIR and OK status with note count' {
+        New-NoteFile 'one'
+        New-NoteFile 'two'
+        $out = Invoke-Notes 'check' 6>&1
+        "$out" | Should -Match 'NOTES_DIR'
+        "$out" | Should -Match 'OK'
+        "$out" | Should -Match '2 note'
+    }
+
+    It 'reports OK with 0 notes when directory is empty' {
+        $out = Invoke-Notes 'check' 6>&1
+        "$out" | Should -Match 'OK'
+        "$out" | Should -Match '0 note'
+    }
+
+    It 'reports NOT FOUND when directory does not exist' {
+        $saved = $env:NOTES_DIR
+        $env:NOTES_DIR = Join-Path ([System.IO.Path]::GetTempPath()) "notes-nonexistent-$([guid]::NewGuid().ToString('N'))"
+        try {
+            $out = Invoke-Notes 'check' 6>&1
+            "$out" | Should -Match 'NOT FOUND'
+        } finally {
+            $env:NOTES_DIR = $saved
+        }
+    }
+}
+
+# ── list with pattern ────────────────────────────────────────────────
+Describe 'list with pattern' {
+    BeforeEach {
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
+    }
+
+    It 'filters notes by filename pattern' {
+        New-NoteFile 'alpha-one'
+        New-NoteFile 'alpha-two'
+        New-NoteFile 'beta-one'
+        $out = Invoke-Notes 'list', 'alpha'
+        $out | Should -HaveCount 2
+        $out[0] | Should -Be 'alpha-one.md'
+        $out[1] | Should -Be 'alpha-two.md'
+    }
+
+    It 'reports no matches for unmatched pattern' {
+        New-NoteFile 'alpha'
+        $out = Invoke-Notes 'list', 'zzz' 6>&1
+        "$out" | Should -BeLike "*No notes matching*"
+    }
+
+    It 'pattern filtering is case-insensitive' {
+        New-NoteFile 'alpha-note'
+        $out = @(Invoke-Notes 'list', 'ALPHA')
+        $out | Should -HaveCount 1
+        $out[0] | Should -Be 'alpha-note.md'
+    }
+}
+
+# ── tag operations ───────────────────────────────────────────────────
+Describe 'tag operations' {
+    BeforeEach {
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
+    }
+
+    Context 'list with tag filter' {
+        It 'list +tag returns only tagged notes' {
+            New-NoteFile 'chess-opening' "#Chess`n# Chess Opening`nContent"
+            New-NoteFile 'recipe' "#Cooking`n# Recipe`nContent"
+            New-NoteFile 'plain' "# Plain`nNo tags"
+            $out = @(Invoke-Notes 'list', '+Chess')
+            $out | Should -HaveCount 1
+            $out[0] | Should -Be 'chess-opening.md'
+        }
+
+        It 'list tag:tag filters by tag' {
+            New-NoteFile 'chess-opening' "#Chess`n# Chess Opening`nContent"
+            New-NoteFile 'recipe' "#Cooking`n# Recipe`nContent"
+            $out = @(Invoke-Notes 'list', 'tag:Chess')
+            $out | Should -HaveCount 1
+            $out[0] | Should -Be 'chess-opening.md'
+        }
+
+        It 'list #tag filters by tag' {
+            New-NoteFile 'chess-opening' "#Chess`n# Chess Opening`nContent"
+            $out = Invoke-Notes 'list', '#Chess'
+            $out | Should -HaveCount 1
+        }
+
+        It 'reports no tagged notes when tag is not found' {
+            New-NoteFile 'alpha' "# Alpha`nContent"
+            $out = Invoke-Notes 'list', '+NoSuchTag' 6>&1
+            "$out" | Should -BeLike "*No notes tagged*"
+        }
+
+        It 'finds notes with multiple tags on first line' {
+            New-NoteFile 'multi' "#Chess #Opening`n# Multi-tagged`nContent"
+            $out1 = Invoke-Notes 'list', '+Chess'
+            $out1 | Should -HaveCount 1
+            $out2 = Invoke-Notes 'list', '+Opening'
+            $out2 | Should -HaveCount 1
+        }
+
+        It 'tag matching is case-insensitive' {
+            New-NoteFile 'chess' "#Chess`n# Chess`nContent"
+            $out = Invoke-Notes 'list', '+chess'
+            $out | Should -HaveCount 1
+        }
+
+        It 'does not match tag beyond the first line' {
+            New-NoteFile 'tricky' "# Title`n#Chess`nContent"
+            $out = Invoke-Notes 'list', '+Chess' 6>&1
+            "$out" | Should -BeLike "*No notes tagged*"
+        }
+    }
+
+    Context 'show with tag' {
+        It 'show +tag displays the tagged note' {
+            New-NoteFile 'chess-opening' "#Chess`n# Chess Opening`nSicilian defense"
+            $out = Invoke-Notes 'show', '+Chess'
+            "$out" | Should -Match 'Sicilian defense'
+        }
+
+        It 'show +tag errors when no notes have that tag' {
+            New-NoteFile 'alpha' "# Alpha`nContent"
+            $out = Invoke-Notes 'show', '+NoSuchTag' 6>&1
+            "$out" | Should -BeLike "*No notes tagged*"
+        }
+    }
+
+    Context 'search with tag' {
+        It 'search +tag text only searches tagged notes' {
+            New-NoteFile 'chess' "#Chess`n# Chess`nSicilian defense"
+            New-NoteFile 'recipe' "#Cooking`n# Recipe`nChicken curry"
+            $out = Invoke-Notes 'search', '+Chess', 'Sicilian' 6>&1
+            "$out" | Should -Match 'chess'
+            "$out" | Should -Not -Match 'recipe'
+        }
+
+        It 'search +tag reports no tagged notes when tag not found' {
+            New-NoteFile 'alpha' "# Alpha`nContent"
+            $out = Invoke-Notes 'search', '+NoSuchTag', 'anything' 6>&1
+            "$out" | Should -BeLike "*No notes tagged*"
+        }
+
+        It 'search +tag reports no matches when text not found in tagged notes' {
+            New-NoteFile 'chess' "#Chess`n# Chess`nSicilian defense"
+            $out = Invoke-Notes 'search', '+Chess', 'zzzzxyz' 6>&1
+            "$out" | Should -BeLike '*No matches found*'
+        }
+    }
+}
+
+# ── import ───────────────────────────────────────────────────────────
+Describe 'import' {
+    BeforeEach {
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
+    }
+
+    It 'errors when no backup dir is given' {
+        $out = Invoke-Notes 'import' 6>&1
+        "$out" | Should -BeLike '*Usage*'
+    }
+
+    It 'errors when backup dir does not exist' {
+        $out = Invoke-Notes 'import', 'C:\nonexistent-path-xyz' 6>&1
+        "$out" | Should -BeLike '*not found*'
+    }
+
+    It 'errors when Items\Note is missing' {
+        $backupDir = Join-Path ([System.IO.Path]::GetTempPath()) "notes-import-test-$([guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+        try {
+            $out = Invoke-Notes 'import', $backupDir 6>&1
+            "$out" | Should -BeLike '*No Items*Note directory*'
+        } finally {
+            Remove-Item $backupDir -Recurse -Force
+        }
+    }
+
+    It 'imports a plain text note' {
+        $backupDir = Join-Path ([System.IO.Path]::GetTempPath()) "notes-import-test-$([guid]::NewGuid().ToString('N'))"
+        $noteDir = Join-Path $backupDir 'Items\Note'
+        New-Item -ItemType Directory -Path $noteDir -Force | Out-Null
+        Set-Content -Path (Join-Path $noteDir 'My Note-abcd1234.txt') -Value 'Hello world' -Encoding utf8
+        try {
+            $out = Invoke-Notes 'import', $backupDir 6>&1
+            "$out" | Should -Match '1 imported'
+            Join-Path $env:NOTES_DIR 'my-note.md' | Should -Exist
+            $content = Get-Content (Join-Path $env:NOTES_DIR 'my-note.md') -Raw
+            $content | Should -Match '# My Note'
+            $content | Should -Match 'Hello world'
+        } finally {
+            Remove-Item $backupDir -Recurse -Force
+        }
+    }
+
+    It 'skips empty note files' {
+        $backupDir = Join-Path ([System.IO.Path]::GetTempPath()) "notes-import-test-$([guid]::NewGuid().ToString('N'))"
+        $noteDir = Join-Path $backupDir 'Items\Note'
+        New-Item -ItemType Directory -Path $noteDir -Force | Out-Null
+        # Create a truly empty (0-byte) file
+        New-Item -ItemType File -Path (Join-Path $noteDir 'Empty-abcd1234.txt') -Force | Out-Null
+        Set-Content -Path (Join-Path $noteDir 'Notempty-efgh5678.txt') -Value 'content' -Encoding utf8
+        try {
+            $out = Invoke-Notes 'import', $backupDir 6>&1
+            "$out" | Should -Match '1 imported'
+            "$out" | Should -Match '1 skipped'
+        } finally {
+            Remove-Item $backupDir -Recurse -Force
+        }
+    }
+
+    It 'handles duplicate slugs by appending a number' {
+        New-NoteFile 'my-note' "# Existing note"
+        $backupDir = Join-Path ([System.IO.Path]::GetTempPath()) "notes-import-test-$([guid]::NewGuid().ToString('N'))"
+        $noteDir = Join-Path $backupDir 'Items\Note'
+        New-Item -ItemType Directory -Path $noteDir -Force | Out-Null
+        Set-Content -Path (Join-Path $noteDir 'My Note-abcd1234.txt') -Value 'New content' -Encoding utf8
+        try {
+            $out = Invoke-Notes 'import', $backupDir 6>&1
+            "$out" | Should -Match '1 imported'
+            Join-Path $env:NOTES_DIR 'my-note-2.md' | Should -Exist
+        } finally {
+            Remove-Item $backupDir -Recurse -Force
+        }
+    }
+
+    It 'applies tags from tag files' {
+        $backupDir = Join-Path ([System.IO.Path]::GetTempPath()) "notes-import-test-$([guid]::NewGuid().ToString('N'))"
+        $noteDir = Join-Path $backupDir 'Items\Note'
+        $tagDir  = Join-Path $backupDir 'Items\Tag'
+        New-Item -ItemType Directory -Path $noteDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $tagDir  -Force | Out-Null
+        Set-Content -Path (Join-Path $noteDir 'My Note-abcd1234.txt') -Value 'Some content' -Encoding utf8
+        $tagJson = @{
+            title = "Chess"
+            references = @(
+                @{ content_type = "Note"; uuid = "xxxx-xxxx-abcd1234" }
+            )
+        } | ConvertTo-Json -Depth 5
+        Set-Content -Path (Join-Path $tagDir 'Chess-tag12345.txt') -Value $tagJson -Encoding utf8
+        try {
+            $out = Invoke-Notes 'import', $backupDir 6>&1
+            "$out" | Should -Match '1 imported'
+            "$out" | Should -Match '1 with tags'
+            $content = Get-Content (Join-Path $env:NOTES_DIR 'my-note.md') -Raw
+            $content | Should -Match '#Chess'
+        } finally {
+            Remove-Item $backupDir -Recurse -Force
+        }
+    }
+
+    It 'converts Lexical JSON notes to markdown' {
+        $backupDir = Join-Path ([System.IO.Path]::GetTempPath()) "notes-import-test-$([guid]::NewGuid().ToString('N'))"
+        $noteDir = Join-Path $backupDir 'Items\Note'
+        New-Item -ItemType Directory -Path $noteDir -Force | Out-Null
+        $lexicalJson = @{
+            root = @{
+                type = "root"
+                children = @(
+                    @{
+                        type = "paragraph"
+                        children = @(
+                            @{ type = "text"; text = "Hello world"; format = 0 }
+                        )
+                    }
+                )
+            }
+        } | ConvertTo-Json -Depth 10
+        Set-Content -Path (Join-Path $noteDir 'Lexical Test-abcd1234.txt') -Value $lexicalJson -Encoding utf8
+        try {
+            $out = Invoke-Notes 'import', $backupDir 6>&1
+            "$out" | Should -Match '1 imported'
+            $content = Get-Content (Join-Path $env:NOTES_DIR 'lexical-test.md') -Raw
+            $content | Should -Match 'Hello world'
+        } finally {
+            Remove-Item $backupDir -Recurse -Force
+        }
+    }
+
+    It 'imports a note without hex suffix in filename' {
+        $backupDir = Join-Path ([System.IO.Path]::GetTempPath()) "notes-import-test-$([guid]::NewGuid().ToString('N'))"
+        $noteDir = Join-Path $backupDir 'Items\Note'
+        New-Item -ItemType Directory -Path $noteDir -Force | Out-Null
+        Set-Content -Path (Join-Path $noteDir 'SimpleNote.txt') -Value 'Plain body' -Encoding utf8
+        try {
+            $out = Invoke-Notes 'import', $backupDir 6>&1
+            "$out" | Should -Match '1 imported'
+            Join-Path $env:NOTES_DIR 'simplenote.md' | Should -Exist
+            $content = Get-Content (Join-Path $env:NOTES_DIR 'simplenote.md') -Raw
+            $content | Should -Match '# SimpleNote'
+        } finally {
+            Remove-Item $backupDir -Recurse -Force
+        }
+    }
+}
+
+# ── ConvertTo-Slug edge cases ────────────────────────────────────────
+Describe 'ConvertTo-Slug edge cases' {
+    BeforeAll {
+        . $script:ScriptPath 'help' 6>&1 | Out-Null
+    }
+
+    It 'collapses multiple spaces into single hyphens' {
+        ConvertTo-Slug 'Hello   World' | Should -Be 'hello-world'
+    }
+
+    It 'trims leading and trailing whitespace' {
+        ConvertTo-Slug '  Hello World  ' | Should -Be 'hello-world'
+    }
+
+    It 'returns empty string for all special characters' {
+        ConvertTo-Slug '@#$%^&*()' | Should -Be ''
+    }
+
+    It 'returns empty string for empty input' {
+        ConvertTo-Slug '' | Should -Be ''
+    }
+
+    It 'strips non-ASCII unicode characters' {
+        ConvertTo-Slug 'Héllo Wörld' | Should -Be 'hllo-wrld'
+    }
+
+    It 'handles mixed case with numbers' {
+        ConvertTo-Slug 'Note 42 About Stuff' | Should -Be 'note-42-about-stuff'
+    }
+
+    It 'collapses multiple hyphens' {
+        ConvertTo-Slug 'Hello---World' | Should -Be 'hello-world'
+    }
+
+    It 'trims leading and trailing hyphens' {
+        ConvertTo-Slug '-hello-' | Should -Be 'hello'
+    }
+}
+
+# ── ConvertFrom-LexicalNode / ConvertFrom-LexicalJson ────────────────
+Describe 'Lexical JSON conversion' {
+    BeforeAll {
+        . $script:ScriptPath 'help' 6>&1 | Out-Null
+    }
+
+    It 'converts plain text paragraph' {
+        $json = '{"root":{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","text":"Hello world","format":0}]}]}}'
+        ConvertFrom-LexicalJson $json | Should -Be 'Hello world'
+    }
+
+    It 'converts bold text (format 1)' {
+        $json = '{"root":{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","text":"bold","format":1}]}]}}'
+        ConvertFrom-LexicalJson $json | Should -Be '**bold**'
+    }
+
+    It 'converts italic text (format 2)' {
+        $json = '{"root":{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","text":"italic","format":2}]}]}}'
+        ConvertFrom-LexicalJson $json | Should -Be '*italic*'
+    }
+
+    It 'converts bold+italic text (format 3)' {
+        $json = '{"root":{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","text":"both","format":3}]}]}}'
+        ConvertFrom-LexicalJson $json | Should -Be '***both***'
+    }
+
+    It 'converts a link node' {
+        $json = '{"root":{"type":"root","children":[{"type":"paragraph","children":[{"type":"link","url":"https://example.com","children":[{"type":"text","text":"click","format":0}]}]}]}}'
+        ConvertFrom-LexicalJson $json | Should -Be '[click](https://example.com)'
+    }
+
+    It 'converts an autolink node' {
+        $json = '{"root":{"type":"root","children":[{"type":"paragraph","children":[{"type":"autolink","url":"https://example.com"}]}]}}'
+        ConvertFrom-LexicalJson $json | Should -Be 'https://example.com'
+    }
+
+    It 'joins multiple paragraphs with double newline' {
+        $json = '{"root":{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","text":"Para 1","format":0}]},{"type":"paragraph","children":[{"type":"text","text":"Para 2","format":0}]}]}}'
+        $result = ConvertFrom-LexicalJson $json
+        $result | Should -Be "Para 1`n`nPara 2"
+    }
+
+    It 'converts unordered list' {
+        $json = @{
+            root = @{
+                type = "root"
+                children = @(
+                    @{
+                        type = "list"
+                        listType = "bullet"
+                        children = @(
+                            @{ type = "listitem"; indent = 0; children = @(@{ type = "text"; text = "Item A"; format = 0 }) }
+                            @{ type = "listitem"; indent = 0; children = @(@{ type = "text"; text = "Item B"; format = 0 }) }
+                        )
+                    }
+                )
+            }
+        } | ConvertTo-Json -Depth 10
+        $result = ConvertFrom-LexicalJson $json
+        $result | Should -Match '- Item A'
+        $result | Should -Match '- Item B'
+    }
+
+    It 'converts ordered list' {
+        $json = @{
+            root = @{
+                type = "root"
+                children = @(
+                    @{
+                        type = "list"
+                        listType = "number"
+                        children = @(
+                            @{ type = "listitem"; indent = 0; children = @(@{ type = "text"; text = "First"; format = 0 }) }
+                            @{ type = "listitem"; indent = 0; children = @(@{ type = "text"; text = "Second"; format = 0 }) }
+                        )
+                    }
+                )
+            }
+        } | ConvertTo-Json -Depth 10
+        $result = ConvertFrom-LexicalJson $json
+        $result | Should -Match '1\. First'
+        $result | Should -Match '2\. Second'
+    }
+
+    It 'converts a table with header separator' {
+        $json = @{
+            root = @{
+                type = "root"
+                children = @(
+                    @{
+                        type = "table"
+                        children = @(
+                            @{
+                                type = "tablerow"
+                                children = @(
+                                    @{ type = "tablecell"; children = @(@{ type = "paragraph"; children = @(@{ type = "text"; text = "H1"; format = 0 }) }) }
+                                    @{ type = "tablecell"; children = @(@{ type = "paragraph"; children = @(@{ type = "text"; text = "H2"; format = 0 }) }) }
+                                )
+                            }
+                            @{
+                                type = "tablerow"
+                                children = @(
+                                    @{ type = "tablecell"; children = @(@{ type = "paragraph"; children = @(@{ type = "text"; text = "C1"; format = 0 }) }) }
+                                    @{ type = "tablecell"; children = @(@{ type = "paragraph"; children = @(@{ type = "text"; text = "C2"; format = 0 }) }) }
+                                )
+                            }
+                        )
+                    }
+                )
+            }
+        } | ConvertTo-Json -Depth 15
+        $result = ConvertFrom-LexicalJson $json
+        $result | Should -Match 'H1'
+        $result | Should -Match '---'
+        $result | Should -Match 'C1'
+    }
+
+    It 'returns empty string for null node' {
+        ConvertFrom-LexicalNode $null | Should -Be ''
+    }
+
+    It 'handles linebreak node' {
+        $json = '{"root":{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","text":"before","format":0},{"type":"linebreak"},{"type":"text","text":"after","format":0}]}]}}'
+        $result = ConvertFrom-LexicalJson $json
+        $result | Should -Match 'before'
+        $result | Should -Match 'after'
+    }
+
+    It 'skips snfile nodes' {
+        $json = '{"root":{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","text":"visible","format":0},{"type":"snfile"}]}]}}'
+        $result = ConvertFrom-LexicalJson $json
+        $result | Should -Be 'visible'
+    }
+}
+
+# ── Get-TagFromArg / Test-IsTagArg ──────────────────────────────────
+Describe 'tag argument helpers' {
+    BeforeAll {
+        . $script:ScriptPath 'help' 6>&1 | Out-Null
+    }
+
+    Context 'Get-TagFromArg' {
+        It 'parses #tag prefix' {
+            Get-TagFromArg '#Chess' | Should -Be 'Chess'
+        }
+
+        It 'parses +tag prefix' {
+            Get-TagFromArg '+Chess' | Should -Be 'Chess'
+        }
+
+        It 'parses tag: prefix' {
+            Get-TagFromArg 'tag:Chess' | Should -Be 'Chess'
+        }
+
+        It 'returns null for plain text' {
+            Get-TagFromArg 'Chess' | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Test-IsTagArg' {
+        It 'returns true for #tag' {
+            Test-IsTagArg '#Chess' | Should -BeTrue
+        }
+
+        It 'returns true for +tag' {
+            Test-IsTagArg '+Chess' | Should -BeTrue
+        }
+
+        It 'returns true for tag:tag' {
+            Test-IsTagArg 'tag:Chess' | Should -BeTrue
+        }
+
+        It 'returns false for plain text' {
+            Test-IsTagArg 'Chess' | Should -BeFalse
+        }
+    }
+}
