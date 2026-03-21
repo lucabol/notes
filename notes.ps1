@@ -40,6 +40,20 @@ function Get-Editor {
     return "notepad"
 }
 
+# --- Tag Argument Helpers ---
+
+function Get-TagFromArg {
+    param([string]$Arg)
+    if ($Arg.StartsWith('#')) { return $Arg.Substring(1) }
+    if ($Arg.StartsWith('tag:')) { return $Arg.Substring(4) }
+    return $null
+}
+
+function Test-IsTagArg {
+    param([string]$Arg)
+    return ($Arg.StartsWith('#') -or $Arg.StartsWith('tag:'))
+}
+
 # --- Slug Helpers ---
 
 function ConvertTo-Slug {
@@ -92,9 +106,9 @@ function Find-NotePath {
 function Resolve-NotePath {
     param([string]$Title)
 
-    if ($Title.StartsWith('#')) {
-        $tag = $Title.Substring(1)
-        $found = @(Find-NotesByTag $tag)
+    $tagName = Get-TagFromArg $Title
+    if ($tagName) {
+        $found = @(Find-NotesByTag $tagName)
         if ($found.Count -eq 0) {
             Write-Host "Error: No notes tagged '$Title'." -ForegroundColor Red
             return $null
@@ -112,7 +126,7 @@ function Resolve-NotePath {
     }
 
     # Multiple matches — let the user pick
-    $label = if ($Title.StartsWith('#')) { "tagged '$Title'" } else { "match '$Title'" }
+    $label = if (Test-IsTagArg $Title) { "tagged '$Title'" } else { "match '$Title'" }
     Write-Host "Multiple notes ${label}:" -ForegroundColor Yellow
     for ($i = 0; $i -lt $found.Count; $i++) {
         Write-Host "  [$($i + 1)] $($found[$i].Name)"
@@ -181,9 +195,9 @@ function Invoke-ListNotes {
     }
 
     if ($Pattern) {
-        if ($Pattern.StartsWith('#')) {
-            $tag = $Pattern.Substring(1)
-            $notes = @(Find-NotesByTag $tag)
+        $tagName = Get-TagFromArg $Pattern
+        if ($tagName) {
+            $notes = @(Find-NotesByTag $tagName)
             if (-not $notes) {
                 Write-Host "No notes tagged '$Pattern'."
                 return
@@ -249,7 +263,7 @@ function Invoke-RemoveNote {
     $filename = [System.IO.Path]::GetFileName($path)
     $basename = [System.IO.Path]::GetFileNameWithoutExtension($path)
     $slug = ConvertTo-Slug $Title
-    $isPartial = -not $Title.StartsWith('#') -and ($filename -ine $Title) -and ($basename -ine $slug)
+    $isPartial = -not (Test-IsTagArg $Title) -and ($filename -ine $Title) -and ($basename -ine $slug)
 
     if ($isPartial) {
         # Partial match — always confirm, even with -Force
@@ -378,8 +392,9 @@ Commands:
   help              Show this help message
 
 Tags:
-  Use #tag in place of a title/pattern to filter by tag (first line of note).
-  Examples: list #Chess, show #Recipes, search #Investing dividend
+  Use #tag or tag:tag in place of a title/pattern to filter by tag (first line of note).
+  The tag: prefix avoids needing quotes (# starts a comment in PowerShell).
+  Examples: list '#Chess' or list tag:Chess, show tag:Recipes, search tag:Investing dividend
 
 Environment:
   NOTES_DIR         Directory for notes (default: ~/notes)
@@ -675,8 +690,8 @@ switch (($Command ?? '').ToLower()) {
     'search' {
         $searchTag = $null
         $searchArgs = $Arguments
-        if ($Arguments -and $Arguments[0].StartsWith('#')) {
-            $searchTag = $Arguments[0].Substring(1)
+        if ($Arguments -and (Test-IsTagArg $Arguments[0])) {
+            $searchTag = Get-TagFromArg $Arguments[0]
             $searchArgs = @($Arguments | Select-Object -Skip 1)
         }
         $searchText = if ($searchArgs) { $searchArgs -join ' ' } else { $null }
