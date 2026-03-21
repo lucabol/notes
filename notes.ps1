@@ -40,6 +40,28 @@ function Get-Editor {
     return "notepad"
 }
 
+function Get-Pager {
+    if ($env:PAGER) { return $env:PAGER }
+    return "more.com"
+}
+
+function Send-ToPager {
+    param([string[]]$Lines)
+    if ([Console]::IsOutputRedirected) {
+        $Lines | ForEach-Object { Write-Output $_ }
+        return
+    }
+    # Only invoke the pager when content exceeds screen height
+    try {
+        $pageSize = [Console]::WindowHeight - 2
+        if ($Lines.Count -gt $pageSize) {
+            $Lines | & (Get-Pager)
+            return
+        }
+    } catch { }
+    $Lines | ForEach-Object { Write-Output $_ }
+}
+
 # --- Tag Argument Helpers ---
 
 function Get-TagFromArg {
@@ -213,9 +235,8 @@ function Invoke-ListNotes {
         }
     }
 
-    foreach ($note in $notes | Sort-Object Name) {
-        Write-Output ($note.Name)
-    }
+    $lines = @($notes | Sort-Object Name | ForEach-Object { $_.Name })
+    Send-ToPager -Lines $lines
 }
 
 function Invoke-ShowNote {
@@ -229,7 +250,8 @@ function Invoke-ShowNote {
     $path = Resolve-NotePath $Title
     if (-not $path) { return }
 
-    Get-Content -Path $path -Raw
+    $lines = @(Get-Content -Path $path)
+    Send-ToPager -Lines $lines
 }
 
 function Invoke-EditNote {
@@ -314,6 +336,7 @@ function Invoke-SearchNotes {
 
     $found = $false
     $escapedText = [regex]::Escape($SearchText)
+    $outputLines = [System.Collections.ArrayList]::new()
 
     foreach ($note in $notes | Sort-Object Name) {
         $lines = Get-Content -Path $note.FullName
@@ -329,27 +352,18 @@ function Invoke-SearchNotes {
 
         if ($hitLines.Count -gt 0) {
             $found = $true
-            Write-Host ""
-            Write-Host "=== $($note.Name) ===" -ForegroundColor Cyan
+            [void]$outputLines.Add("")
+            [void]$outputLines.Add("=== $($note.Name) ===")
             foreach ($hit in $hitLines) {
-                Write-Host "  $($hit.LineNumber): " -NoNewline
-                # Highlight matching text
-                $remaining = $hit.Text
-                while ($remaining -imatch "(?i)($escapedText)") {
-                    $idx = $remaining.IndexOf($Matches[1], [System.StringComparison]::OrdinalIgnoreCase)
-                    if ($idx -gt 0) {
-                        Write-Host $remaining.Substring(0, $idx) -NoNewline
-                    }
-                    Write-Host $remaining.Substring($idx, $Matches[1].Length) -NoNewline -BackgroundColor Yellow -ForegroundColor Black
-                    $remaining = $remaining.Substring($idx + $Matches[1].Length)
-                }
-                Write-Host $remaining
+                [void]$outputLines.Add("  $($hit.LineNumber): $($hit.Text)")
             }
         }
     }
 
     if (-not $found) {
         Write-Host "No matches found for '$SearchText'."
+    } else {
+        Send-ToPager -Lines $outputLines
     }
 }
 
