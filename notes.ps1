@@ -45,13 +45,14 @@ function Get-Editor {
 function Get-TagFromArg {
     param([string]$Arg)
     if ($Arg.StartsWith('#')) { return $Arg.Substring(1) }
+    if ($Arg.StartsWith('+')) { return $Arg.Substring(1) }
     if ($Arg.StartsWith('tag:')) { return $Arg.Substring(4) }
     return $null
 }
 
 function Test-IsTagArg {
     param([string]$Arg)
-    return ($Arg.StartsWith('#') -or $Arg.StartsWith('tag:'))
+    return ($Arg.StartsWith('#') -or $Arg.StartsWith('+') -or $Arg.StartsWith('tag:'))
 }
 
 # --- Slug Helpers ---
@@ -392,9 +393,16 @@ Commands:
   help              Show this help message
 
 Tags:
-  Use #tag or tag:tag in place of a title/pattern to filter by tag (first line of note).
-  The tag: prefix avoids needing quotes (# starts a comment in PowerShell).
-  Examples: list '#Chess' or list tag:Chess, show tag:Recipes, search tag:Investing dividend
+  Filter by tag (first line of note) using any of these prefixes:
+    +tag        Recommended — works unquoted in all shells
+    tag:tag     Also works unquoted everywhere
+    #tag        Needs quotes in PowerShell/bash (# is a comment character)
+  Examples:
+    list +Chess                 List notes tagged Chess
+    show +Recipes               Show a recipe note
+    search +Investing dividend  Search within Investing-tagged notes
+    list tag:Chess              Same as list +Chess
+    list '#Chess'               Same, but requires quotes
 
 Environment:
   NOTES_DIR         Directory for notes (default: ~/notes)
