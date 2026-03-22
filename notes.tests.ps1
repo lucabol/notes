@@ -756,3 +756,145 @@ Describe 'tag argument helpers' {
         }
     }
 }
+
+# ── Find-NotePath ────────────────────────────────────────────────────
+Describe 'Find-NotePath' {
+    BeforeAll {
+        . $script:ScriptPath 'help' 6>&1 | Out-Null
+    }
+    BeforeEach {
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
+    }
+
+    It 'exact filename match' {
+        New-NoteFile 'hello-world'
+        $result = Find-NotePath 'hello-world.md'
+        $result | Should -HaveCount 1
+        $result[0].Name | Should -Be 'hello-world.md'
+    }
+
+    It 'slug basename match' {
+        New-NoteFile 'hello-world'
+        $result = Find-NotePath 'Hello World'
+        $result | Should -HaveCount 1
+        $result[0].Name | Should -Be 'hello-world.md'
+    }
+
+    It 'partial substring match on filename' {
+        New-NoteFile 'hello-world'
+        $result = Find-NotePath 'hello'
+        $result | Should -HaveCount 1
+        $result[0].Name | Should -Be 'hello-world.md'
+    }
+
+    It 'partial slug match on basename' {
+        New-NoteFile 'hello-world-notes'
+        $result = Find-NotePath 'Hello World'
+        $result | Should -HaveCount 1
+        $result[0].Name | Should -Be 'hello-world-notes.md'
+    }
+
+    It 'returns empty array when no match' {
+        New-NoteFile 'hello-world'
+        $result = Find-NotePath 'zzz-no-match'
+        $result | Should -HaveCount 0
+    }
+
+    It 'returns empty array when directory is empty' {
+        $result = Find-NotePath 'anything'
+        $result | Should -HaveCount 0
+    }
+}
+
+# ── Get-Editor ───────────────────────────────────────────────────────
+Describe 'Get-Editor' {
+    BeforeAll {
+        . $script:ScriptPath 'help' 6>&1 | Out-Null
+        $script:SavedEditor = $env:EDITOR
+        $script:SavedVisual = $env:VISUAL
+    }
+    AfterAll {
+        $env:EDITOR = $script:SavedEditor
+        $env:VISUAL = $script:SavedVisual
+    }
+
+    It 'returns EDITOR when set' {
+        $env:EDITOR = 'myeditor'
+        $env:VISUAL = 'myvisual'
+        Get-Editor | Should -Be 'myeditor'
+    }
+
+    It 'falls back to VISUAL when EDITOR not set' {
+        $env:EDITOR = ''
+        $env:VISUAL = 'myvisual'
+        Get-Editor | Should -Be 'myvisual'
+    }
+
+    It 'falls back to notepad when neither set' {
+        $env:EDITOR = ''
+        $env:VISUAL = ''
+        Get-Editor | Should -Be 'notepad'
+    }
+}
+
+# ── Get-Pager ────────────────────────────────────────────────────────
+Describe 'Get-Pager' {
+    BeforeAll {
+        . $script:ScriptPath 'help' 6>&1 | Out-Null
+        $script:SavedPager = $env:PAGER
+    }
+    AfterAll {
+        $env:PAGER = $script:SavedPager
+    }
+
+    It 'returns PAGER when set' {
+        $env:PAGER = 'mypager'
+        Get-Pager | Should -Be 'mypager'
+    }
+
+    It 'falls back to more.com when not set' {
+        $env:PAGER = ''
+        Get-Pager | Should -Be 'more.com'
+    }
+}
+
+# ── Send-ToPager ─────────────────────────────────────────────────────
+Describe 'Send-ToPager' {
+    BeforeAll {
+        . $script:ScriptPath 'help' 6>&1 | Out-Null
+    }
+
+    It 'outputs all lines when output is redirected' {
+        $lines = @('line one', 'line two', 'line three')
+        $result = Send-ToPager -Lines $lines
+        $result | Should -HaveCount 3
+        $result[0] | Should -Be 'line one'
+        $result[2] | Should -Be 'line three'
+    }
+}
+
+# ── Get-NoteFilename / Get-NotePath ─────────────────────────────────
+Describe 'Get-NoteFilename' {
+    BeforeAll {
+        . $script:ScriptPath 'help' 6>&1 | Out-Null
+    }
+
+    It 'returns slug with .md extension' {
+        Get-NoteFilename 'Hello World' | Should -Be 'hello-world.md'
+    }
+
+    It 'handles special characters' {
+        Get-NoteFilename 'My Note!@#' | Should -Be 'my-note.md'
+    }
+}
+
+Describe 'Get-NotePath' {
+    BeforeAll {
+        . $script:ScriptPath 'help' 6>&1 | Out-Null
+    }
+
+    It 'returns full path under NOTES_DIR' {
+        $expected = Join-Path $env:NOTES_DIR 'hello-world.md'
+        Get-NotePath 'Hello World' | Should -Be $expected
+    }
+}
