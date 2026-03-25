@@ -14,9 +14,15 @@ BeforeAll {
     New-Item -ItemType Directory -Path $script:TempDir -Force | Out-Null
     $env:NOTES_DIR = $script:TempDir
 
-    # No-op editor — a tiny batch file that exits immediately (outside notes dir)
-    $script:NoopEditor = Join-Path ([System.IO.Path]::GetTempPath()) "notes-noop-editor-$([guid]::NewGuid().ToString('N')).cmd"
-    Set-Content -Path $script:NoopEditor -Value '@exit /b 0' -Encoding ascii
+    # No-op editor — a tiny script that exits immediately (outside notes dir)
+    if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+        $script:NoopEditor = Join-Path ([System.IO.Path]::GetTempPath()) "notes-noop-editor-$([guid]::NewGuid().ToString('N')).cmd"
+        Set-Content -Path $script:NoopEditor -Value '@exit /b 0' -Encoding ascii
+    } else {
+        $script:NoopEditor = Join-Path ([System.IO.Path]::GetTempPath()) "notes-noop-editor-$([guid]::NewGuid().ToString('N')).sh"
+        Set-Content -Path $script:NoopEditor -Value '#!/bin/sh' -Encoding ascii -NoNewline
+        chmod +x $script:NoopEditor
+    }
     $env:EDITOR = $script:NoopEditor
 
     # ── helpers ──────────────────────────────────────────────────────
