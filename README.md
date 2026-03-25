@@ -32,24 +32,26 @@ By default the installer writes launchers to `$HOME\bin` on Windows and `$HOME/.
 
 ## Quick start
 
+The examples below assume you ran `install.ps1` and added the install directory to your `PATH`. If you want to run directly from the repository instead, replace `notes` with `.\notes.ps1`.
+
 ```powershell
 # Create a note (opens in $EDITOR)
-.\notes.ps1 add "My First Note"
+notes add "My First Note"
 
 # List all notes
-.\notes.ps1 list
+notes list
 
 # Show a note
-.\notes.ps1 show "My First Note"
+notes show "My First Note"
 
 # Edit a note
-.\notes.ps1 edit "My First Note"
+notes edit "My First Note"
 
 # Delete a note
-.\notes.ps1 remove "My First Note"
+notes remove "My First Note"
 
 # Search across all notes
-.\notes.ps1 search "keyword"
+notes search "keyword"
 ```
 
 ## Commands
@@ -79,11 +81,11 @@ Tag a note by placing a `#tag` token on the **first line**:
 Then filter any command by tag using one of three equivalent prefixes:
 
 ```powershell
-.\notes.ps1 list +Recipes          # recommended — works unquoted in all shells
-.\notes.ps1 list tag:Recipes       # also works unquoted everywhere
-.\notes.ps1 list '#Recipes'        # needs quotes (# is a comment character)
+notes list +Recipes          # recommended — works unquoted in all shells
+notes list tag:Recipes       # also works unquoted everywhere
+notes list '#Recipes'        # needs quotes (# is a comment character)
 
-.\notes.ps1 search "chicken" +Recipes   # search within a single tag
+notes search "chicken" +Recipes   # search within a single tag
 ```
 
 ## Configuration
@@ -111,7 +113,7 @@ Commands that fail for user-visible reasons, such as missing notes, duplicate ad
 Export your Standard Notes data as a `.zip` backup, unzip it, then run:
 
 ```powershell
-.\notes.ps1 import "C:\path\to\standard-notes-backup"
+notes import "C:\path\to\standard-notes-backup"
 ```
 
 Each note is converted from the Standard Notes Lexical format and saved as a `.md` file.
