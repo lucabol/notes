@@ -8,6 +8,8 @@ BeforeAll {
     $script:ScriptPath = Join-Path $PSScriptRoot 'notes.ps1'
     $script:OrigNotesDir = $env:NOTES_DIR
     $script:OrigEditor   = $env:EDITOR
+    $script:OrigVisual   = $env:VISUAL
+    $script:OrigPager    = $env:PAGER
 
     # Isolated temp dir for every test run
     $script:TempDir = Join-Path ([System.IO.Path]::GetTempPath()) "notes-tests-$([guid]::NewGuid().ToString('N'))"
@@ -31,6 +33,39 @@ BeforeAll {
         & $script:ScriptPath @PassArgs
     }
 
+    function script:Invoke-NotesProcess {
+        param(
+            [string[]]$PassArgs,
+            [hashtable]$Environment = @{}
+        )
+
+        $savedEnvironment = @{}
+        foreach ($entry in $Environment.GetEnumerator()) {
+            $savedEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key)
+            if ($null -eq $entry.Value) {
+                Remove-Item -Path "Env:$($entry.Key)" -ErrorAction SilentlyContinue
+            } else {
+                Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value
+            }
+        }
+
+        try {
+            $output = & pwsh -NoProfile -File $script:ScriptPath @PassArgs 2>&1
+            [PSCustomObject]@{
+                Output   = @($output | ForEach-Object { "$_" })
+                ExitCode = $LASTEXITCODE
+            }
+        } finally {
+            foreach ($entry in $savedEnvironment.GetEnumerator()) {
+                if ($null -eq $entry.Value) {
+                    Remove-Item -Path "Env:$($entry.Key)" -ErrorAction SilentlyContinue
+                } else {
+                    Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value
+                }
+            }
+        }
+    }
+
     function script:New-NoteFile {
         param([string]$Slug, [string]$Content = "# test`nsome body text")
         $path = Join-Path $env:NOTES_DIR "$Slug.md"
@@ -42,6 +77,8 @@ AfterAll {
     # Restore originals
     $env:NOTES_DIR = $script:OrigNotesDir
     $env:EDITOR    = $script:OrigEditor
+    $env:VISUAL    = $script:OrigVisual
+    $env:PAGER     = $script:OrigPager
 
     if ($script:TempDir -and (Test-Path $script:TempDir)) {
         Remove-Item -Recurse -Force $script:TempDir
@@ -88,6 +125,28 @@ Describe 'add' {
         Invoke-Notes 'add', 'Café & Résumé!'
         # slug strips non-alphanumeric chars
         Join-Path $env:NOTES_DIR 'caf-rsum.md' | Should -Exist
+    }
+
+    It 'supports EDITOR commands with arguments' {
+        $capturePath = Join-Path $script:TempDir 'editor-args.txt'
+        $editorScript = Join-Path $script:TempDir 'editor helper.ps1'
+        @'
+param([string]$NotePath)
+Set-Content -Path $env:NOTES_EDITOR_CAPTURE -Value $NotePath -Encoding utf8
+'@ | Set-Content -Path $editorScript -Encoding utf8
+
+        $env:EDITOR = "pwsh -NoProfile -File `"$editorScript`""
+        $env:NOTES_EDITOR_CAPTURE = $capturePath
+
+        try {
+            Invoke-Notes 'add', 'Arg Test'
+        } finally {
+            $env:EDITOR = $script:NoopEditor
+            Remove-Item Env:NOTES_EDITOR_CAPTURE -ErrorAction SilentlyContinue
+        }
+
+        $capturePath | Should -Exist
+        (Get-Content -Path $capturePath -Raw).Trim() | Should -Be (Join-Path $env:NOTES_DIR 'arg-test.md')
     }
 }
 
@@ -241,6 +300,38 @@ Describe 'help and default' {
     It 'shows help with no command' {
         $out = Invoke-Notes 6>&1
         "$out" | Should -Match 'Usage'
+    }
+}
+
+Describe 'process exit codes' {
+    BeforeEach {
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
+        $env:EDITOR = $script:NoopEditor
+    }
+
+    It 'returns non-zero for a missing note' {
+        $result = Invoke-NotesProcess -PassArgs @('show', 'missing-note')
+        $result.ExitCode | Should -Not -Be 0
+        ($result.Output -join "`n") | Should -BeLike '*not found*'
+    }
+
+    It 'returns non-zero for duplicate add' {
+        Invoke-Notes 'add', 'Dup'
+        $result = Invoke-NotesProcess -PassArgs @('add', 'Dup')
+        $result.ExitCode | Should -Not -Be 0
+        ($result.Output -join "`n") | Should -BeLike '*already exists*'
+    }
+
+    It 'returns non-zero when the editor cannot be started' {
+        $result = Invoke-NotesProcess -PassArgs @('add', 'Bad Editor') -Environment @{ EDITOR = 'definitely-missing-editor' }
+        $result.ExitCode | Should -Not -Be 0
+        ($result.Output -join "`n") | Should -BeLike '*Failed to start editor*'
+    }
+
+    It 'returns non-zero for unknown commands' {
+        $result = Invoke-NotesProcess -PassArgs @('bogus')
+        $result.ExitCode | Should -Not -Be 0
+        ($result.Output -join "`n") | Should -BeLike '*Unknown command*'
     }
 }
 
@@ -761,6 +852,26 @@ Describe 'tag argument helpers' {
             Test-IsTagArg 'Chess' | Should -BeFalse
         }
     }
+
+    Context 'Split-TagArgument' {
+        It 'splits a leading tag from the remaining arguments' {
+            $result = Split-TagArgument @('+Recipes', 'chicken', 'soup')
+            $result.Tag | Should -Be 'Recipes'
+            $result.Arguments | Should -Be @('chicken', 'soup')
+        }
+
+        It 'returns all arguments when there is no leading tag' {
+            $result = Split-TagArgument @('chicken', 'soup')
+            $result.Tag | Should -BeNullOrEmpty
+            $result.Arguments | Should -Be @('chicken', 'soup')
+        }
+
+        It 'returns empty arguments when no values are passed' {
+            $result = Split-TagArgument -Values @()
+            $result.Tag | Should -BeNullOrEmpty
+            $result.Arguments.Count | Should -Be 0
+        }
+    }
 }
 
 # ── Find-NotePath ────────────────────────────────────────────────────
@@ -812,6 +923,24 @@ Describe 'Find-NotePath' {
     }
 }
 
+Describe 'Test-NoteExists' {
+    BeforeAll {
+        . $script:ScriptPath 'help' 6>&1 | Out-Null
+    }
+    BeforeEach {
+        Get-ChildItem $env:NOTES_DIR -File | Remove-Item -Force
+    }
+
+    It 'returns true when a note can be resolved by title' {
+        New-NoteFile 'hello-world'
+        Test-NoteExists 'Hello World' | Should -BeTrue
+    }
+
+    It 'returns false when the note does not exist' {
+        Test-NoteExists 'Missing' | Should -BeFalse
+    }
+}
+
 # ── Get-Editor ───────────────────────────────────────────────────────
 Describe 'Get-Editor' {
     BeforeAll {
@@ -836,10 +965,14 @@ Describe 'Get-Editor' {
         Get-Editor | Should -Be 'myvisual'
     }
 
-    It 'falls back to notepad when neither set' {
+    It 'falls back to the platform default when neither set' {
         $env:EDITOR = ''
         $env:VISUAL = ''
-        Get-Editor | Should -Be 'notepad'
+        if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+            Get-Editor | Should -Be 'notepad'
+        } else {
+            Get-Editor | Should -Be 'vi'
+        }
     }
 }
 
@@ -858,9 +991,13 @@ Describe 'Get-Pager' {
         Get-Pager | Should -Be 'mypager'
     }
 
-    It 'falls back to more.com when not set' {
+    It 'falls back to the platform default when not set' {
         $env:PAGER = ''
-        Get-Pager | Should -Be 'more.com'
+        if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+            Get-Pager | Should -Be 'more.com'
+        } else {
+            Get-Pager | Should -Be 'less'
+        }
     }
 }
 

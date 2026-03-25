@@ -9,6 +9,9 @@ A lightweight CLI tool for managing plain-text markdown notes, written in PowerS
 - **Tag support** – tag notes by putting a `#tag` on the first line and filter by tag across all commands
 - **Standard Notes import** – migrate from a Standard Notes backup in one command
 - **Pager support** – long output is automatically piped through your preferred pager
+- **Flexible tool commands** – `EDITOR`, `VISUAL`, and `PAGER` can include arguments such as `code --wait`
+- **Automation-friendly** – user-visible failures return non-zero exit codes for scripts and CI
+- **Simple install flow** – `install.ps1` creates launchers in your user bin directory
 - **Cross-platform** – runs on Windows, macOS, and Linux via PowerShell 7+
 
 ## Requirements
@@ -17,12 +20,15 @@ A lightweight CLI tool for managing plain-text markdown notes, written in PowerS
 
 ## Installation
 
-Clone or download the repository, then optionally add `notes.ps1` to a directory on your `PATH` (or create an alias/function in your PowerShell profile).
+Clone the repository and run the installer to create a lightweight launcher in your user bin directory.
 
 ```powershell
 git clone https://github.com/lucabol/notes.git
 cd notes
+pwsh -NoProfile -File .\install.ps1
 ```
+
+By default the installer writes launchers to `$HOME\bin` on Windows and `$HOME/.local/bin` elsewhere. It creates `notes.ps1` plus a shell-specific launcher (`notes.cmd` on Windows, `notes` elsewhere). Make sure that directory is on your `PATH`.
 
 ## Quick start
 
@@ -85,14 +91,20 @@ Then filter any command by tag using one of three equivalent prefixes:
 | Environment variable | Default | Description |
 |---|---|---|
 | `NOTES_DIR` | `~/notes` | Directory where notes are stored |
-| `EDITOR` / `VISUAL` | `notepad` (Windows) | Editor used for `add` and `edit` |
-| `PAGER` | `more.com` (Windows) | Pager used for long output |
+| `EDITOR` / `VISUAL` | `notepad` on Windows, `vi` elsewhere | Editor used for `add` and `edit` |
+| `PAGER` | `more.com` on Windows, `less` elsewhere | Pager used for long output |
 
 ```powershell
 # Example: use VS Code and store notes on a synced drive
 $env:EDITOR   = "code --wait"
 $env:NOTES_DIR = "$HOME/Dropbox/notes"
 ```
+
+Command strings with arguments are supported, so values like `code --wait` and `less -FRX` work as expected.
+
+## Automation and scripting
+
+Commands that fail for user-visible reasons, such as missing notes, duplicate adds, invalid import paths, or editor launch failures, return a non-zero exit code. This makes `notes.ps1` safer to use from scripts, wrappers, and CI jobs.
 
 ## Importing from Standard Notes
 

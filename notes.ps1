@@ -19,6 +19,26 @@ param(
     [string[]]$Arguments
 )
 
+$script:ExitCode = 0
+$script:ShouldSetProcessExit = (Get-PSCallStack).Count -le 2
+
+function Set-CommandExitCode {
+    param([int]$Code = 1)
+    if ($Code -gt $script:ExitCode) {
+        $script:ExitCode = $Code
+    }
+}
+
+function Write-CommandError {
+    param(
+        [string]$Message,
+        [int]$Code = 1
+    )
+
+    Write-Host $Message -ForegroundColor Red
+    Set-CommandExitCode -Code $Code
+}
+
 # --- Configuration ---
 
 function Get-NotesDir {
@@ -37,12 +57,140 @@ function Ensure-NotesDir {
 function Get-Editor {
     if ($env:EDITOR) { return $env:EDITOR }
     if ($env:VISUAL) { return $env:VISUAL }
-    return "notepad"
+    if ($IsWindows -or $env:OS -eq 'Windows_NT') { return "notepad" }
+    return "vi"
 }
 
 function Get-Pager {
     if ($env:PAGER) { return $env:PAGER }
-    return "more.com"
+    if ($IsWindows -or $env:OS -eq 'Windows_NT') { return "more.com" }
+    return "less"
+}
+
+function Get-CommandParts {
+    param(
+        [string]$CommandText,
+        [string]$Purpose
+    )
+
+    if (-not $CommandText) {
+        throw "No $Purpose command is configured."
+    }
+
+    $trimmedCommand = $CommandText.Trim()
+    $unquotedCommand = $trimmedCommand
+    if ($trimmedCommand.Length -ge 2) {
+        $firstChar = $trimmedCommand[0]
+        $lastChar = $trimmedCommand[$trimmedCommand.Length - 1]
+        if (($firstChar -eq '"' -and $lastChar -eq '"') -or ($firstChar -eq "'" -and $lastChar -eq "'")) {
+            $unquotedCommand = $trimmedCommand.Substring(1, $trimmedCommand.Length - 2)
+        }
+    }
+    if (Test-Path -LiteralPath $unquotedCommand) {
+        return @($unquotedCommand)
+    }
+
+    $tokens = $null
+    $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput("& $trimmedCommand", [ref]$tokens, [ref]$errors)
+    if ($errors.Count -gt 0) {
+        throw "Invalid $Purpose command '$CommandText': $($errors[0].Message)"
+    }
+
+    $statements = @($ast.EndBlock.Statements)
+    if ($statements.Count -ne 1) {
+        throw "Invalid $Purpose command '$CommandText'. Use a single command plus arguments."
+    }
+
+    $pipelineElements = @($statements[0].PipelineElements)
+    if ($pipelineElements.Count -ne 1) {
+        throw "Invalid $Purpose command '$CommandText'. Pipelines are not supported."
+    }
+
+    $commandParts = @($pipelineElements[0].CommandElements | ForEach-Object {
+        if ($null -ne $_.PSObject.Properties['Value']) {
+            [string]$_.Value
+        } else {
+            $_.Extent.Text
+        }
+    })
+
+    if ($commandParts.Count -eq 0) {
+        throw "Invalid $Purpose command '$CommandText'."
+    }
+
+    return $commandParts
+}
+
+function Invoke-ConfiguredCommand {
+    param(
+        [string]$CommandText,
+        [string[]]$Arguments = @(),
+        [string]$Purpose
+    )
+
+    $commandParts = @(Get-CommandParts -CommandText $CommandText -Purpose $Purpose)
+    $commandName = $commandParts[0]
+    $commandArguments = @($commandParts | Select-Object -Skip 1) + $Arguments
+
+    $savedExitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    $savedExitCode = if ($savedExitCodeVariable) { $savedExitCodeVariable.Value } else { $null }
+    $global:LASTEXITCODE = 0
+
+    try {
+        & $commandName @commandArguments
+        $commandFailed = -not $?
+        $commandExitCode = $global:LASTEXITCODE
+    } catch {
+        throw "Failed to start $Purpose '$CommandText': $($_.Exception.Message)"
+    } finally {
+        if ($null -eq $savedExitCode) {
+            Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+        } else {
+            $global:LASTEXITCODE = $savedExitCode
+        }
+    }
+
+    if ($commandFailed) {
+        throw "$Purpose '$CommandText' reported a failure."
+    }
+    if ($commandExitCode -ne 0) {
+        throw "$Purpose '$CommandText' exited with code $commandExitCode."
+    }
+}
+
+function Invoke-PagerCommand {
+    param([string[]]$Lines)
+
+    $pager = Get-Pager
+    $commandParts = @(Get-CommandParts -CommandText $pager -Purpose "pager")
+    $commandName = $commandParts[0]
+    $commandArguments = @($commandParts | Select-Object -Skip 1)
+
+    $savedExitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    $savedExitCode = if ($savedExitCodeVariable) { $savedExitCodeVariable.Value } else { $null }
+    $global:LASTEXITCODE = 0
+
+    try {
+        $Lines | & $commandName @commandArguments
+        $commandFailed = -not $?
+        $commandExitCode = $global:LASTEXITCODE
+    } catch {
+        throw "Failed to start pager '$pager': $($_.Exception.Message)"
+    } finally {
+        if ($null -eq $savedExitCode) {
+            Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+        } else {
+            $global:LASTEXITCODE = $savedExitCode
+        }
+    }
+
+    if ($commandFailed) {
+        throw "Pager '$pager' reported a failure."
+    }
+    if ($commandExitCode -ne 0) {
+        throw "Pager '$pager' exited with code $commandExitCode."
+    }
 }
 
 function Send-ToPager {
@@ -54,11 +202,19 @@ function Send-ToPager {
     # Only invoke the pager when content exceeds screen height
     try {
         $pageSize = [Console]::WindowHeight - 2
-        if ($Lines.Count -gt $pageSize) {
-            $Lines | & (Get-Pager)
+    } catch {
+        $pageSize = $null
+    }
+
+    if ($null -ne $pageSize -and $Lines.Count -gt $pageSize) {
+        try {
+            Invoke-PagerCommand -Lines $Lines
             return
+        } catch {
+            Write-Host "Warning: $($_.Exception.Message) Falling back to direct output." -ForegroundColor Yellow
         }
-    } catch { }
+    }
+
     $Lines | ForEach-Object { Write-Output $_ }
 }
 
@@ -75,6 +231,29 @@ function Get-TagFromArg {
 function Test-IsTagArg {
     param([string]$Arg)
     return ($Arg.StartsWith('#') -or $Arg.StartsWith('+') -or $Arg.StartsWith('tag:'))
+}
+
+function Split-TagArgument {
+    param([string[]]$Values = @())
+
+    if (-not $Values -or $Values.Count -eq 0) {
+        return [PSCustomObject]@{
+            Tag       = $null
+            Arguments = @()
+        }
+    }
+
+    if (Test-IsTagArg $Values[0]) {
+        return [PSCustomObject]@{
+            Tag       = Get-TagFromArg $Values[0]
+            Arguments = @($Values | Select-Object -Skip 1)
+        }
+    }
+
+    return [PSCustomObject]@{
+        Tag       = $null
+        Arguments = @($Values)
+    }
 }
 
 # --- Slug Helpers ---
@@ -126,6 +305,11 @@ function Find-NotePath {
     return @()
 }
 
+function Test-NoteExists {
+    param([string]$Title)
+    return @(Find-NotePath $Title).Count -gt 0
+}
+
 function Resolve-NotePath {
     param([string]$Title)
 
@@ -133,13 +317,13 @@ function Resolve-NotePath {
     if ($tagName) {
         $found = @(Find-NotesByTag $tagName)
         if ($found.Count -eq 0) {
-            Write-Host "Error: No notes tagged '$Title'." -ForegroundColor Red
+            Write-CommandError "Error: No notes tagged '$Title'."
             return $null
         }
     } else {
         $found = @(Find-NotePath $Title)
         if ($found.Count -eq 0) {
-            Write-Host "Error: Note '$Title' not found." -ForegroundColor Red
+            Write-CommandError "Error: Note '$Title' not found."
             return $null
         }
     }
@@ -187,22 +371,27 @@ function Invoke-AddNote {
     param([string]$Title)
 
     if (-not $Title) {
-        Write-Host "Usage: notes add <title>" -ForegroundColor Red
+        Write-CommandError "Usage: notes add <title>"
         return
     }
 
     $path = Get-NotePath $Title
-    if (@(Find-NotePath $Title).Count -gt 0) {
-        Write-Host "Error: Note '$Title' already exists." -ForegroundColor Red
+    if (Test-NoteExists $Title) {
+        Write-CommandError "Error: Note '$Title' already exists."
         return
     }
 
     # Create the file with a heading so the editor opens a non-empty file
     $heading = "# $Title"
-    Set-Content -Path $path -Value $heading -Encoding utf8
+    Set-Content -Path $path -Value $heading -Encoding utf8 -ErrorAction Stop
 
-    $editor = Get-Editor
-    Start-Process -FilePath $editor -ArgumentList "`"$path`"" -NoNewWindow -Wait
+    try {
+        Invoke-ConfiguredCommand -CommandText (Get-Editor) -Arguments @($path) -Purpose "editor"
+    } catch {
+        Write-CommandError "Error: Note '$Title' was created, but $($_.Exception.Message)"
+        return
+    }
+
     Write-Host "Note '$Title' created."
 }
 
@@ -218,15 +407,15 @@ function Invoke-ListNotes {
     }
 
     if ($Pattern) {
-        $tagName = Get-TagFromArg $Pattern
-        if ($tagName) {
-            $notes = @(Find-NotesByTag $tagName)
+        $parsedPattern = Split-TagArgument -Values @($Pattern)
+        if ($parsedPattern.Tag) {
+            $notes = @(Find-NotesByTag $parsedPattern.Tag)
             if (-not $notes) {
                 Write-Host "No notes tagged '$Pattern'."
                 return
             }
         } else {
-            $escaped = [regex]::Escape($Pattern)
+            $escaped = [regex]::Escape($parsedPattern.Arguments[0])
             $notes = @($notes | Where-Object { $_.Name -imatch $escaped })
             if (-not $notes) {
                 Write-Host "No notes matching '$Pattern'."
@@ -243,7 +432,7 @@ function Invoke-ShowNote {
     param([string]$Title)
 
     if (-not $Title) {
-        Write-Host "Usage: notes show <title>" -ForegroundColor Red
+        Write-CommandError "Usage: notes show <title>"
         return
     }
 
@@ -258,15 +447,18 @@ function Invoke-EditNote {
     param([string]$Title)
 
     if (-not $Title) {
-        Write-Host "Usage: notes edit <title>" -ForegroundColor Red
+        Write-CommandError "Usage: notes edit <title>"
         return
     }
 
     $path = Resolve-NotePath $Title
     if (-not $path) { return }
 
-    $editor = Get-Editor
-    Start-Process -FilePath $editor -ArgumentList "`"$path`"" -NoNewWindow -Wait
+    try {
+        Invoke-ConfiguredCommand -CommandText (Get-Editor) -Arguments @($path) -Purpose "editor"
+    } catch {
+        Write-CommandError "Error: $($_.Exception.Message)"
+    }
 }
 
 function Invoke-RemoveNote {
@@ -276,7 +468,7 @@ function Invoke-RemoveNote {
     )
 
     if (-not $Title) {
-        Write-Host "Usage: notes remove <title> [-Force]" -ForegroundColor Red
+        Write-CommandError "Usage: notes remove <title> [-Force]"
         return
     }
 
@@ -314,7 +506,7 @@ function Invoke-SearchNotes {
     )
 
     if (-not $SearchText) {
-        Write-Host "Usage: notes search <text>" -ForegroundColor Red
+        Write-CommandError "Usage: notes search <text>"
         return
     }
 
@@ -385,6 +577,7 @@ function Invoke-CheckNotes {
         Write-Host "Status: OK ($count note(s))" -ForegroundColor Green
     } catch {
         Write-Host "Status: NOT ACCESSIBLE - $_" -ForegroundColor Red
+        Set-CommandExitCode -Code 1
     }
 }
 
@@ -420,7 +613,8 @@ Tags:
 
 Environment:
   NOTES_DIR         Directory for notes (default: ~/notes)
-  EDITOR / VISUAL   Preferred text editor (default: notepad)
+  EDITOR / VISUAL   Preferred text editor (default: notepad on Windows, vi elsewhere)
+  PAGER             Preferred pager (default: more.com on Windows, less elsewhere)
 "@
 }
 
@@ -561,11 +755,11 @@ function Invoke-ImportNotes {
     param([string]$BackupDir)
 
     if (-not $BackupDir) {
-        Write-Host "Usage: notes import <backup-directory>" -ForegroundColor Red
+        Write-CommandError "Usage: notes import <backup-directory>"
         return
     }
     if (-not (Test-Path $BackupDir)) {
-        Write-Host "Error: Backup directory '$BackupDir' not found." -ForegroundColor Red
+        Write-CommandError "Error: Backup directory '$BackupDir' not found."
         return
     }
 
@@ -573,7 +767,7 @@ function Invoke-ImportNotes {
     $noteDir = Join-Path $BackupDir "Items\Note"
 
     if (-not (Test-Path $noteDir)) {
-        Write-Host "Error: No Items\Note directory found in '$BackupDir'." -ForegroundColor Red
+        Write-CommandError "Error: No Items\Note directory found in '$BackupDir'."
         return
     }
 
@@ -705,25 +899,30 @@ if ($Arguments.Count -gt 0 -and ($Arguments -contains '-Force')) {
 }
 
 $arg = if ($Arguments.Count -gt 0) { $Arguments[0] } else { $null }
+$normalizedCommand = ($Command ?? '').ToLower()
 
-switch (($Command ?? '').ToLower()) {
+switch ($normalizedCommand) {
+    ''       { Show-Help }
     'add'    { Invoke-AddNote -Title $arg }
     'list'   { Invoke-ListNotes -Pattern $arg }
     'show'   { Invoke-ShowNote -Title $arg }
     'edit'   { Invoke-EditNote -Title $arg }
     'remove' { Invoke-RemoveNote -Title $arg -Force:$forceFlag }
     'search' {
-        $searchTag = $null
-        $searchArgs = $Arguments
-        if ($Arguments -and (Test-IsTagArg $Arguments[0])) {
-            $searchTag = Get-TagFromArg $Arguments[0]
-            $searchArgs = @($Arguments | Select-Object -Skip 1)
-        }
-        $searchText = if ($searchArgs) { $searchArgs -join ' ' } else { $null }
-        Invoke-SearchNotes -SearchText $searchText -Tag $searchTag
+        $parsedSearch = Split-TagArgument -Values @($Arguments)
+        $searchText = if ($parsedSearch.Arguments) { $parsedSearch.Arguments -join ' ' } else { $null }
+        Invoke-SearchNotes -SearchText $searchText -Tag $parsedSearch.Tag
     }
     'check'  { Invoke-CheckNotes }
     'import' { Invoke-ImportNotes -BackupDir $arg }
     'help'   { Show-Help }
-    default  { Show-Help }
+    default  {
+        Write-CommandError "Error: Unknown command '$Command'."
+        Show-Help
+    }
+}
+
+$global:LASTEXITCODE = $script:ExitCode
+if ($script:ShouldSetProcessExit) {
+    $host.SetShouldExit($script:ExitCode)
 }
