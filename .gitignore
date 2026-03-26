@@ -8,3 +8,11 @@
 
 Backup/
 testResults.xml
+__pycache__/
+.venv-gui*/
+.venv-gui-ci*/
+.venv-gui-build/
+.python-packages-gui*/
+.python-packages-gui-ci*/
+build/
+dist/

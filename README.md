@@ -12,6 +12,7 @@ A lightweight CLI tool for managing plain-text markdown notes, written in PowerS
 - **Flexible tool commands** – `EDITOR`, `VISUAL`, and `PAGER` can include arguments such as `code --wait`
 - **Automation-friendly** – user-visible failures return non-zero exit codes for scripts and CI
 - **Simple install flow** – `install.ps1` creates launchers in your user bin directory
+- **Desktop GUI** – optional `notes-gui` app for browsing, editing, searching, tagging, and importing notes
 - **Cross-platform** – runs on Windows, macOS, and Linux via PowerShell 7+
 
 ## Requirements
@@ -28,7 +29,32 @@ cd notes
 pwsh -NoProfile -File .\install.ps1
 ```
 
-By default the installer writes launchers to `$HOME\bin` on Windows and `$HOME/.local/bin` elsewhere. It creates `notes.ps1` plus a shell-specific launcher (`notes.cmd` on Windows, `notes` elsewhere). Make sure that directory is on your `PATH`.
+By default the installer writes launchers to `$HOME\bin` on Windows and `$HOME/.local/bin` elsewhere. It creates `notes.ps1` plus a shell-specific launcher (`notes.cmd` on Windows, `notes` elsewhere).
+
+If the GUI sources are present and Python 3 is available, the installer also creates a local `.venv-gui`, installs the GUI dependencies into it, and creates `notes-gui.ps1` plus a shell-specific GUI launcher (`notes-gui.cmd` on Windows, `notes-gui` elsewhere).
+
+Make sure that directory is on your `PATH`.
+
+## Optional GUI requirements
+
+The desktop GUI is implemented in Python with PySide6. The simplest path is to let `install.ps1` bootstrap `.venv-gui` for you.
+
+If you want to install the GUI dependencies manually instead, create a virtual environment and install `requirements-gui.txt` into it:
+
+```powershell
+python -m venv .venv-gui
+```
+
+Then use the Python executable inside that virtual environment to install the requirements:
+
+- Windows PowerShell: `.\.venv-gui\Scripts\python -m pip install -r .\requirements-gui.txt`
+- Linux/macOS: `./.venv-gui/bin/python -m pip install -r ./requirements-gui.txt`
+
+Then launch it with:
+
+```powershell
+notes-gui
+```
 
 ## Quick start
 
@@ -53,6 +79,17 @@ notes remove "My First Note"
 # Search across all notes
 notes search "keyword"
 ```
+
+## GUI quick start
+
+The GUI works against the same `NOTES_DIR` as the CLI.
+
+- browse and search notes
+- filter by tag
+- edit title, tags, and body
+- save, delete, and create notes
+- import a Standard Notes backup
+- open the current note in your configured external editor
 
 ## Commands
 
@@ -125,6 +162,8 @@ The project uses [Pester](https://pester.dev/) for tests and [PSScriptAnalyzer](
 ```powershell
 .\ci.ps1
 ```
+
+The CI script now also creates a local `.venv-gui-ci`, installs the GUI Python dependency there when needed, and runs the Python unit tests under `gui_tests\`.
 
 ## License
 
