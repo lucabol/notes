@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
+import shlex
 import subprocess
 from pathlib import Path
 
-from gui.core.compat import get_default_gui_editor_command, quote_shell_arg, resolve_notes_command
+from gui.core.compat import get_default_gui_editor_command, resolve_notes_command
 from gui.core.models import ImportResult
 
 
@@ -33,10 +35,31 @@ class ImportService:
         )
 
 
-def launch_external_editor(note_path: Path) -> None:
-    editor = get_default_gui_editor_command()
-    command = f"{editor} {quote_shell_arg(str(note_path))}"
+def _build_editor_command(note_path: Path) -> list[str]:
+    editor = get_default_gui_editor_command().strip()
+    if not editor:
+        raise IntegrationError("No editor command is configured.")
+
     try:
-        subprocess.Popen(command, shell=True)
+        parts = shlex.split(editor, posix=os.name != "nt")
+    except ValueError as exc:
+        raise IntegrationError(f"Failed to parse editor '{editor}': {exc}") from exc
+
+    if os.name == "nt":
+        parts = [
+            part[1:-1] if len(part) >= 2 and part.startswith('"') and part.endswith('"') else part
+            for part in parts
+        ]
+
+    if not parts:
+        raise IntegrationError("No editor command is configured.")
+
+    return [*parts, str(note_path)]
+
+
+def launch_external_editor(note_path: Path) -> None:
+    try:
+        subprocess.Popen(_build_editor_command(note_path))
     except OSError as exc:
+        editor = get_default_gui_editor_command()
         raise IntegrationError(f"Failed to start editor '{editor}': {exc}") from exc

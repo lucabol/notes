@@ -19,7 +19,7 @@ from gui.core.compat import get_default_gui_editor_command, slugify
 from gui.core.models import GuiSettings, NoteRecord
 from gui.core.repository import NoteRepository, extract_tags_from_first_line, parse_note_file
 from gui.core.search import collect_tag_counts, filter_notes
-from gui.core.services import ImportService, IntegrationError
+from gui.core.services import ImportService, IntegrationError, launch_external_editor
 from gui.core.settings import SettingsStore
 
 
@@ -154,6 +154,29 @@ class NotesGuiCoreTests(unittest.TestCase):
 
         with self.assertRaises(IntegrationError):
             service.run_import(Path.cwd())
+
+    def test_launch_external_editor_uses_process_arguments_on_windows(self) -> None:
+        note_path = Path(r"C:\Users\lucabol\notes\sample.md")
+
+        with mock.patch("gui.core.services.get_default_gui_editor_command", return_value="notepad"):
+            with mock.patch("gui.core.services.os.name", "nt"):
+                with mock.patch("gui.core.services.subprocess.Popen") as popen:
+                    launch_external_editor(note_path)
+
+        popen.assert_called_once_with(["notepad", str(note_path)])
+
+    def test_launch_external_editor_parses_windows_editor_with_arguments(self) -> None:
+        note_path = Path(r"C:\Users\lucabol\notes\sample.md")
+        editor = r'"C:\Program Files\Notepad++\notepad++.exe" -multiInst'
+
+        with mock.patch("gui.core.services.get_default_gui_editor_command", return_value=editor):
+            with mock.patch("gui.core.services.os.name", "nt"):
+                with mock.patch("gui.core.services.subprocess.Popen") as popen:
+                    launch_external_editor(note_path)
+
+        popen.assert_called_once_with(
+            [r"C:\Program Files\Notepad++\notepad++.exe", "-multiInst", str(note_path)]
+        )
 
     def test_gui_editor_default_is_graphical_on_windows(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
