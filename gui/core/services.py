@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from gui.core.compat import get_default_editor_command, quote_shell_arg, resolve_notes_command
+from gui.core.compat import get_default_gui_editor_command, quote_shell_arg, resolve_notes_command
 from gui.core.models import ImportResult
 
 
@@ -34,7 +34,7 @@ class ImportService:
 
 
 def launch_external_editor(note_path: Path) -> None:
-    editor = get_default_editor_command()
+    editor = get_default_gui_editor_command()
     command = f"{editor} {quote_shell_arg(str(note_path))}"
     try:
         subprocess.Popen(command, shell=True)

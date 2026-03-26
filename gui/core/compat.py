@@ -4,6 +4,7 @@ import os
 import re
 import shlex
 import shutil
+import sys
 from pathlib import Path
 
 
@@ -16,6 +17,20 @@ def get_default_notes_dir() -> Path:
 
 def get_default_editor_command() -> str:
     return os.environ.get("EDITOR") or os.environ.get("VISUAL") or ("notepad" if os.name == "nt" else "vi")
+
+
+def get_default_gui_editor_command() -> str:
+    configured = os.environ.get("EDITOR") or os.environ.get("VISUAL")
+    if configured:
+        return configured
+
+    if os.name == "nt":
+        return "notepad"
+
+    if sys.platform == "darwin":
+        return "open"
+
+    return "xdg-open"
 
 
 def get_default_pager_command() -> str:

@@ -15,7 +15,7 @@ if str(REPO_ROOT) not in sys.path:
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from gui.core.compat import slugify
+from gui.core.compat import get_default_gui_editor_command, slugify
 from gui.core.models import GuiSettings, NoteRecord
 from gui.core.repository import NoteRepository, extract_tags_from_first_line, parse_note_file
 from gui.core.search import collect_tag_counts, filter_notes
@@ -153,6 +153,18 @@ class NotesGuiCoreTests(unittest.TestCase):
 
         with self.assertRaises(IntegrationError):
             service.run_import(Path.cwd())
+
+    def test_gui_editor_default_is_graphical_on_windows(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch("gui.core.compat.os.name", "nt"):
+                with mock.patch("gui.core.compat.sys.platform", "win32"):
+                    self.assertEqual(get_default_gui_editor_command(), "notepad")
+
+    def test_gui_editor_default_is_graphical_on_linux(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch("gui.core.compat.os.name", "posix"):
+                with mock.patch("gui.core.compat.sys.platform", "linux"):
+                    self.assertEqual(get_default_gui_editor_command(), "xdg-open")
 
 
 if __name__ == "__main__":

@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from gui.core.compat import get_default_notes_dir, get_default_pager_command, get_default_editor_command, get_settings_path
+from gui.core.compat import (
+    get_default_gui_editor_command,
+    get_default_notes_dir,
+    get_default_pager_command,
+    get_settings_path,
+)
 from gui.core.models import GuiSettings
 
 
@@ -38,6 +43,6 @@ def resolve_notes_dir(settings: GuiSettings) -> Path:
 
 def get_runtime_details() -> dict[str, str]:
     return {
-        "editor": get_default_editor_command(),
+        "editor": get_default_gui_editor_command(),
         "pager": get_default_pager_command(),
     }

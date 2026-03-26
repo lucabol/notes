@@ -91,6 +91,8 @@ The GUI works against the same `NOTES_DIR` as the CLI.
 - import a Standard Notes backup
 - open the current note in your configured external editor
 
+When `EDITOR`/`VISUAL` is not set, `notes-gui` defaults to a graphical editor launcher: `notepad` on Windows, `xdg-open` on Linux, and `open` on macOS.
+
 ## Commands
 
 | Command | Description |
