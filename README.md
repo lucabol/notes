@@ -1,6 +1,6 @@
 # notes
 
-A lightweight CLI tool for managing plain-text markdown notes, written in PowerShell. Notes are stored as `.md` files in a local folder, making them easy to sync, back up, or use with any text editor.
+A cross-platform markdown notes app with both a PowerShell CLI and an optional desktop GUI. Notes are stored as plain `.md` files in a local folder, making them easy to sync, back up, edit with other tools, and keep future-proof.
 
 ## Features
 
@@ -17,11 +17,12 @@ A lightweight CLI tool for managing plain-text markdown notes, written in PowerS
 
 ## Requirements
 
-- [PowerShell 7+](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell) (`pwsh`)
+- [PowerShell 7+](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell) (`pwsh`) for the CLI and install flow
+- Python 3 if you want to run `notes-gui`
 
 ## Installation
 
-Clone the repository and run the installer to create a lightweight launcher in your user bin directory.
+Clone the repository and run the installer to create launchers in your user bin directory.
 
 ```powershell
 git clone https://github.com/lucabol/notes.git
@@ -56,7 +57,7 @@ Then launch it with:
 notes-gui
 ```
 
-## Quick start
+## CLI quick start
 
 The examples below assume you ran `install.ps1` and added the install directory to your `PATH`. If you want to run directly from the repository instead, replace `notes` with `.\notes.ps1`.
 
@@ -82,7 +83,7 @@ notes search "keyword"
 
 ## GUI quick start
 
-The GUI works against the same `NOTES_DIR` as the CLI.
+The GUI works against the same `NOTES_DIR` as the CLI, so both interfaces operate on the same markdown notes.
 
 - browse and search notes
 - filter by tag
