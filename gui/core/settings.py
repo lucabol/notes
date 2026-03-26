@@ -24,6 +24,7 @@ class SettingsStore:
         return GuiSettings(
             notes_dir_override=data.get("notes_dir_override"),
             sort_order=data.get("sort_order", "modified"),
+            theme=data.get("theme", "dark"),
         )
 
     def save(self, settings: GuiSettings) -> None:
@@ -31,6 +32,7 @@ class SettingsStore:
         data = {
             "notes_dir_override": settings.notes_dir_override,
             "sort_order": settings.sort_order,
+            "theme": settings.theme,
         }
         self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 

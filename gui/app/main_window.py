@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.app.theme import build_stylesheet
 from gui.core.models import GuiSettings, NoteRecord
 from gui.core.repository import NoteRepository, RepositoryError
 from gui.core.search import collect_tag_counts, filter_notes
@@ -44,6 +45,10 @@ class SettingsDialog(QDialog):
         self.sort_order_combo.addItem("Last modified", "modified")
         self.sort_order_combo.addItem("Title", "title")
         self.sort_order_combo.setCurrentIndex(0 if settings.sort_order == "modified" else 1)
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("Dark", "dark")
+        self.theme_combo.addItem("Light", "light")
+        self.theme_combo.setCurrentIndex(0 if settings.theme == "dark" else 1)
 
         runtime_details = get_runtime_details()
         self.editor_label = QLabel(runtime_details["editor"])
@@ -59,6 +64,7 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
         form.addRow("Notes directory", self._wrap_layout(notes_dir_row))
         form.addRow("Default sort", self.sort_order_combo)
+        form.addRow("Theme", self.theme_combo)
         form.addRow("Detected editor", self.editor_label)
         form.addRow("Detected pager", self.pager_label)
 
@@ -86,6 +92,7 @@ class SettingsDialog(QDialog):
         return GuiSettings(
             notes_dir_override=notes_dir_override,
             sort_order=self.sort_order_combo.currentData(),
+            theme=self.theme_combo.currentData(),
         )
 
 
@@ -106,6 +113,7 @@ class MainWindow(QMainWindow):
         self.is_dirty = False
 
         self._build_ui()
+        self.apply_theme()
         self.refresh_notes()
 
     def _build_ui(self) -> None:
@@ -139,6 +147,8 @@ class MainWindow(QMainWindow):
         self.note_list.currentItemChanged.connect(self.on_note_selected)
 
         left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(16, 16, 12, 16)
+        left_layout.setSpacing(10)
         left_layout.addWidget(QLabel("Search"))
         left_layout.addWidget(self.search_box)
         left_layout.addWidget(QLabel("Tags"))
@@ -162,6 +172,8 @@ class MainWindow(QMainWindow):
         self.path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
         right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(12, 16, 16, 16)
+        right_layout.setSpacing(10)
         right_layout.addWidget(QLabel("Title"))
         right_layout.addWidget(self.title_edit)
         right_layout.addWidget(QLabel("Tags"))
@@ -182,6 +194,10 @@ class MainWindow(QMainWindow):
         status_bar = QStatusBar()
         self.setStatusBar(status_bar)
         self.update_status()
+
+    def apply_theme(self) -> None:
+        app = self.window().windowHandle()
+        self.setStyleSheet(build_stylesheet(self.settings.theme))
 
     def mark_dirty(self) -> None:
         if self.loading_note:
@@ -458,5 +474,6 @@ class MainWindow(QMainWindow):
 
         self.settings = dialog.to_settings()
         self.settings_store.save(self.settings)
+        self.apply_theme()
         self.clear_editor()
         self.refresh_notes()

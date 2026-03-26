@@ -13,6 +13,7 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("notes-gui")
+    app.setStyle("Fusion")
     window = MainWindow()
     window.resize(1200, 800)
     window.show()

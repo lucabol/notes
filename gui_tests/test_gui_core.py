@@ -90,10 +90,11 @@ class NotesGuiCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_path = Path(temp_dir) / "settings.json"
             store = SettingsStore(settings_path)
-            store.save(GuiSettings(notes_dir_override=str(Path(temp_dir) / "notes"), sort_order="title"))
+            store.save(GuiSettings(notes_dir_override=str(Path(temp_dir) / "notes"), sort_order="title", theme="light"))
             loaded = store.load()
 
             self.assertEqual(loaded.sort_order, "title")
+            self.assertEqual(loaded.theme, "light")
             self.assertIn("notes", loaded.notes_dir_override or "")
 
     def test_import_service_uses_command_override(self) -> None:

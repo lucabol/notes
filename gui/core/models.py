@@ -18,6 +18,7 @@ class NoteRecord:
 class GuiSettings:
     notes_dir_override: str | None = None
     sort_order: str = "modified"
+    theme: str = "dark"
 
 
 @dataclass(slots=True)
