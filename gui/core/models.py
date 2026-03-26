@@ -19,6 +19,7 @@ class GuiSettings:
     notes_dir_override: str | None = None
     sort_order: str = "modified"
     theme: str = "dark"
+    external_editor_command: str | None = None
 
 
 @dataclass(slots=True)

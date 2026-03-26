@@ -90,11 +90,19 @@ class NotesGuiCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             settings_path = Path(temp_dir) / "settings.json"
             store = SettingsStore(settings_path)
-            store.save(GuiSettings(notes_dir_override=str(Path(temp_dir) / "notes"), sort_order="title", theme="light"))
+            store.save(
+                GuiSettings(
+                    notes_dir_override=str(Path(temp_dir) / "notes"),
+                    sort_order="title",
+                    theme="light",
+                    external_editor_command="code --wait",
+                )
+            )
             loaded = store.load()
 
             self.assertEqual(loaded.sort_order, "title")
             self.assertEqual(loaded.theme, "light")
+            self.assertEqual(loaded.external_editor_command, "code --wait")
             self.assertIn("notes", loaded.notes_dir_override or "")
 
     def test_import_service_uses_command_override(self) -> None:
@@ -158,10 +166,9 @@ class NotesGuiCoreTests(unittest.TestCase):
     def test_launch_external_editor_uses_process_arguments_on_windows(self) -> None:
         note_path = Path(r"C:\Users\lucabol\notes\sample.md")
 
-        with mock.patch("gui.core.services.get_default_gui_editor_command", return_value="notepad"):
-            with mock.patch("gui.core.services.os.name", "nt"):
-                with mock.patch("gui.core.services.subprocess.Popen") as popen:
-                    launch_external_editor(note_path)
+        with mock.patch("gui.core.services.os.name", "nt"):
+            with mock.patch("gui.core.services.subprocess.Popen") as popen:
+                launch_external_editor(note_path, "notepad")
 
         popen.assert_called_once_with(["notepad", str(note_path)])
 
@@ -169,10 +176,9 @@ class NotesGuiCoreTests(unittest.TestCase):
         note_path = Path(r"C:\Users\lucabol\notes\sample.md")
         editor = r'"C:\Program Files\Notepad++\notepad++.exe" -multiInst'
 
-        with mock.patch("gui.core.services.get_default_gui_editor_command", return_value=editor):
-            with mock.patch("gui.core.services.os.name", "nt"):
-                with mock.patch("gui.core.services.subprocess.Popen") as popen:
-                    launch_external_editor(note_path)
+        with mock.patch("gui.core.services.os.name", "nt"):
+            with mock.patch("gui.core.services.subprocess.Popen") as popen:
+                launch_external_editor(note_path, editor)
 
         popen.assert_called_once_with(
             [r"C:\Program Files\Notepad++\notepad++.exe", "-multiInst", str(note_path)]
@@ -183,6 +189,18 @@ class NotesGuiCoreTests(unittest.TestCase):
             with mock.patch("gui.core.compat.os.name", "nt"):
                 with mock.patch("gui.core.compat.sys.platform", "win32"):
                     self.assertEqual(get_default_gui_editor_command(), "notepad")
+
+    def test_gui_editor_ignores_terminal_editor_environment(self) -> None:
+        with mock.patch.dict(os.environ, {"EDITOR": "nvim", "VISUAL": "nvim"}, clear=True):
+            with mock.patch("gui.core.compat.os.name", "nt"):
+                with mock.patch("gui.core.compat.sys.platform", "win32"):
+                    self.assertEqual(get_default_gui_editor_command(), "notepad")
+
+    def test_gui_editor_uses_gui_specific_environment_override(self) -> None:
+        with mock.patch.dict(os.environ, {"NOTES_GUI_EDITOR": "code --wait"}, clear=True):
+            with mock.patch("gui.core.compat.os.name", "nt"):
+                with mock.patch("gui.core.compat.sys.platform", "win32"):
+                    self.assertEqual(get_default_gui_editor_command(), "code --wait")
 
     def test_gui_editor_default_is_graphical_on_linux(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):

@@ -25,6 +25,7 @@ class SettingsStore:
             notes_dir_override=data.get("notes_dir_override"),
             sort_order=data.get("sort_order", "modified"),
             theme=data.get("theme", "dark"),
+            external_editor_command=data.get("external_editor_command"),
         )
 
     def save(self, settings: GuiSettings) -> None:
@@ -33,6 +34,7 @@ class SettingsStore:
             "notes_dir_override": settings.notes_dir_override,
             "sort_order": settings.sort_order,
             "theme": settings.theme,
+            "external_editor_command": settings.external_editor_command,
         }
         self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -43,8 +45,8 @@ def resolve_notes_dir(settings: GuiSettings) -> Path:
     return get_default_notes_dir()
 
 
-def get_runtime_details() -> dict[str, str]:
+def get_runtime_details(settings: GuiSettings | None = None) -> dict[str, str]:
     return {
-        "editor": get_default_gui_editor_command(),
+        "editor": get_default_gui_editor_command(settings.external_editor_command if settings else None),
         "pager": get_default_pager_command(),
     }

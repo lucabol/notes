@@ -51,7 +51,9 @@ class SettingsDialog(QDialog):
         self.theme_combo.addItem("Light", "light")
         self.theme_combo.setCurrentIndex(0 if settings.theme == "dark" else 1)
 
-        runtime_details = get_runtime_details()
+        runtime_details = get_runtime_details(settings)
+        self.editor_command_edit = QLineEdit(settings.external_editor_command or "")
+        self.editor_command_edit.setPlaceholderText(runtime_details["editor"])
         self.editor_label = QLabel(runtime_details["editor"])
         self.pager_label = QLabel(runtime_details["pager"])
 
@@ -66,7 +68,8 @@ class SettingsDialog(QDialog):
         form.addRow("Notes directory", self._wrap_layout(notes_dir_row))
         form.addRow("Default sort", self.sort_order_combo)
         form.addRow("Theme", self.theme_combo)
-        form.addRow("Detected editor", self.editor_label)
+        form.addRow("External editor", self.editor_command_edit)
+        form.addRow("Active editor", self.editor_label)
         form.addRow("Detected pager", self.pager_label)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -94,6 +97,7 @@ class SettingsDialog(QDialog):
             notes_dir_override=notes_dir_override,
             sort_order=self.sort_order_combo.currentData(),
             theme=self.theme_combo.currentData(),
+            external_editor_command=self.editor_command_edit.text().strip() or None,
         )
 
 
@@ -462,7 +466,10 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            launch_external_editor(self.saved_note_path or self.current_note_path)
+            launch_external_editor(
+                self.saved_note_path or self.current_note_path,
+                self.settings.external_editor_command,
+            )
         except IntegrationError as exc:
             QMessageBox.critical(self, "External editor failed", str(exc))
 

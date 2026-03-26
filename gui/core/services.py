@@ -35,8 +35,8 @@ class ImportService:
         )
 
 
-def _build_editor_command(note_path: Path) -> list[str]:
-    editor = get_default_gui_editor_command().strip()
+def _build_editor_command(note_path: Path, editor_command: str | None = None) -> list[str]:
+    editor = get_default_gui_editor_command(editor_command).strip()
     if not editor:
         raise IntegrationError("No editor command is configured.")
 
@@ -57,9 +57,9 @@ def _build_editor_command(note_path: Path) -> list[str]:
     return [*parts, str(note_path)]
 
 
-def launch_external_editor(note_path: Path) -> None:
+def launch_external_editor(note_path: Path, editor_command: str | None = None) -> None:
     try:
-        subprocess.Popen(_build_editor_command(note_path))
+        subprocess.Popen(_build_editor_command(note_path, editor_command))
     except OSError as exc:
-        editor = get_default_gui_editor_command()
+        editor = get_default_gui_editor_command(editor_command)
         raise IntegrationError(f"Failed to start editor '{editor}': {exc}") from exc

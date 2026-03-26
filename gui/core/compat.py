@@ -19,10 +19,13 @@ def get_default_editor_command() -> str:
     return os.environ.get("EDITOR") or os.environ.get("VISUAL") or ("notepad" if os.name == "nt" else "vi")
 
 
-def get_default_gui_editor_command() -> str:
-    configured = os.environ.get("EDITOR") or os.environ.get("VISUAL")
+def get_default_gui_editor_command(configured: str | None = None) -> str:
     if configured:
-        return configured
+        return configured.strip()
+
+    configured = os.environ.get("NOTES_GUI_EDITOR")
+    if configured:
+        return configured.strip()
 
     if os.name == "nt":
         return "notepad"
