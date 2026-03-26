@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QApplication,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -196,8 +197,9 @@ class MainWindow(QMainWindow):
         self.update_status()
 
     def apply_theme(self) -> None:
-        app = self.window().windowHandle()
-        self.setStyleSheet(build_stylesheet(self.settings.theme))
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(build_stylesheet(self.settings.theme))
 
     def mark_dirty(self) -> None:
         if self.loading_note:

@@ -93,7 +93,7 @@ The GUI works against the same `NOTES_DIR` as the CLI.
 
 When `EDITOR`/`VISUAL` is not set, `notes-gui` defaults to a graphical editor launcher: `notepad` on Windows, `xdg-open` on Linux, and `open` on macOS.
 
-`notes-gui` also includes a built-in modern theme, with a dark theme by default and a light theme option in Settings.
+`notes-gui` also includes a built-in modern theme, with a dark theme by default and a light theme option in Settings. The refreshed styling uses bolder typography, brighter accent colors, and app-wide theme application so the main window and dialogs feel more consistent.
 
 ## Commands
 
