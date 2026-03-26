@@ -25,7 +25,7 @@ def normalize_tags(tags: list[str]) -> list[str]:
         if key in seen:
             continue
         seen.add(key)
-        normalized.append(clean)
+        normalized.append(key)
     return normalized
 
 

@@ -35,7 +35,7 @@ class NotesGuiCoreTests(unittest.TestCase):
             note = parse_note_file(note_path)
 
             self.assertEqual(note.title, "Cooking Notes")
-            self.assertEqual(note.tags, ["Recipes", "Dinner"])
+            self.assertEqual(note.tags, ["recipes", "dinner"])
             self.assertEqual(note.body, "Chicken and rice")
 
     def test_parse_note_with_tag_line_before_heading(self) -> None:
@@ -46,7 +46,7 @@ class NotesGuiCoreTests(unittest.TestCase):
             note = parse_note_file(note_path)
 
             self.assertEqual(note.title, "Summer Trip")
-            self.assertEqual(note.tags, ["Travel", "Ideas"])
+            self.assertEqual(note.tags, ["travel", "ideas"])
             self.assertEqual(note.body, "Spain")
 
     def test_repository_save_can_rename_note_when_title_changes(self) -> None:
@@ -67,7 +67,7 @@ class NotesGuiCoreTests(unittest.TestCase):
             self.assertFalse(saved.path.exists())
             self.assertTrue(renamed_saved.path.exists())
             self.assertEqual(renamed_saved.path.name, "renamed-title.md")
-            self.assertEqual(renamed_saved.tags, ["Work"])
+            self.assertEqual(renamed_saved.tags, ["work"])
 
     def test_filter_notes_supports_search_and_tags(self) -> None:
         notes = [
@@ -80,11 +80,11 @@ class NotesGuiCoreTests(unittest.TestCase):
 
     def test_collect_tag_counts_summarizes_sidebar_tags(self) -> None:
         notes = [
-            NoteRecord(Path("a.md"), "a", "A", ["Work", "Ideas"], "", 1),
-            NoteRecord(Path("b.md"), "b", "B", ["Work"], "", 1),
+            NoteRecord(Path("a.md"), "a", "A", ["Work", "ideas"], "", 1),
+            NoteRecord(Path("b.md"), "b", "B", ["work"], "", 1),
         ]
 
-        self.assertEqual(collect_tag_counts(notes), [("Ideas", 1), ("Work", 2)])
+        self.assertEqual(collect_tag_counts(notes), [("ideas", 1), ("work", 2)])
 
     def test_settings_store_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -131,7 +131,22 @@ class NotesGuiCoreTests(unittest.TestCase):
             self.assertEqual(gui.main.main(), 0)
 
     def test_extract_tags_uses_first_line_rules(self) -> None:
-        self.assertEqual(extract_tags_from_first_line("# Heading #Work #Ideas"), ["Work", "Ideas"])
+        self.assertEqual(extract_tags_from_first_line("# Heading #Work #Ideas"), ["work", "ideas"])
+
+    def test_normalize_tags_is_case_insensitive(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository = NoteRepository(Path(temp_dir))
+            saved = repository.save_note(
+                NoteRecord(
+                    path=Path(temp_dir) / "mixed.md",
+                    slug="mixed",
+                    title="Mixed Tags",
+                    tags=["Work", "work", "WORK", "Ideas"],
+                    body="Body",
+                )
+            )
+
+            self.assertEqual(saved.tags, ["work", "ideas"])
 
     def test_import_service_wraps_missing_command_errors(self) -> None:
         service = ImportService(["command-that-does-not-exist-for-notes-tests"])

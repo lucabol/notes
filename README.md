@@ -125,6 +125,8 @@ notes list '#Recipes'        # needs quotes (# is a comment character)
 notes search "chicken" +Recipes   # search within a single tag
 ```
 
+Tags are treated case-insensitively.
+
 ## Configuration
 
 | Environment variable | Default | Description |

@@ -34,5 +34,6 @@ def collect_tag_counts(notes: list[NoteRecord]) -> list[tuple[str, int]]:
     counts: dict[str, int] = {}
     for note in notes:
         for tag in note.tags:
-            counts[tag] = counts.get(tag, 0) + 1
+            normalized = tag.lower()
+            counts[normalized] = counts.get(normalized, 0) + 1
     return sorted(counts.items(), key=lambda item: item[0].lower())
